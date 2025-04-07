@@ -1,5 +1,5 @@
 # uncomment the desired crypto lib line
-#CRYPTO=mbedtls
+CRYPTO=mbedtls
 #CRYPTO=openssl
 #CRYPTO=ipp_crypto
 
