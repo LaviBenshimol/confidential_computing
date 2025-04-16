@@ -48,6 +48,32 @@ bool CryptoWrapper::hmac_SHA256(IN const BYTE* key, size_t keySizeBytes,
 								 IN const BYTE* message, size_t messageSizeBytes,
 								 OUT BYTE* macBuffer, IN size_t macBufferSizeBytes)
 {
+	/**
+ * @brief Computes the HMAC of a given message using SHA-256 or SHA3-512 (if supported and key is long enough).
+ *
+ * This function calculates a Hash-based Message Authentication Code (HMAC) over the input message
+ * using either SHA-256 (default) or SHA3-512 (optional). The selection is based on the key size:
+ * if the key is at least 48 bytes and SHA3-512 is supported by the mbedTLS build, it will be used.
+ *
+ * It uses the mbedTLS message digest APIs to initialize an HMAC context, bind the key,
+ * update with the message data, and finalize the digest into the provided output buffer.
+ *
+ * @param[in]  key                 Pointer to the HMAC key.
+ * @param[in]  keySizeBytes       Size of the key in bytes.
+ * @param[in]  message            Pointer to the input message buffer.
+ * @param[in]  messageSizeBytes   Size of the input message in bytes.
+ * @param[out] macBuffer          Pointer to the buffer where the computed HMAC will be written.
+ * @param[in]  macBufferSizeBytes Size of the macBuffer in bytes. Must be at least 32 for SHA-256, or 64 for SHA3-512.
+ *
+ * @return true on success, false on failure (e.g., null pointers, buffer too small, unsupported hash type).
+ *
+ * @note The function uses SHA-256 by default. If the key is large (>= 48 bytes) and SHA3-512 is compiled in,
+ *       it will switch to SHA3-512 automatically.
+ *
+ * @warning The caller must ensure that macBuffer is securely allocated and cleared if needed,
+ *          especially when handling cryptographic outputs.
+ */
+
 	if (key == NULL || message == NULL || macBuffer == NULL ||
 		keySizeBytes == 0 || messageSizeBytes == 0 || macBufferSizeBytes == 0)
 	{
