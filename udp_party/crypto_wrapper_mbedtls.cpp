@@ -57,13 +57,30 @@ bool CryptoWrapper::hmac_SHA256(IN const BYTE* key, IN size_t keySizeBytes, IN c
 
 
 bool CryptoWrapper::deriveKey_HKDF_SHA256(IN const BYTE* salt, IN size_t saltSizeBytes,
-	IN const BYTE* secretMaterial, IN size_t secretMaterialSizeBytes,
-	IN const BYTE* context, IN size_t contextSizeBytes,
-	OUT BYTE* outputBuffer, IN size_t outputBufferSizeBytes)
+IN const BYTE* secretMaterial, IN size_t secretMaterialSizeBytes,
+IN const BYTE* context, IN size_t contextSizeBytes,
+OUT BYTE* outputBuffer, IN size_t outputBufferSizeBytes)
 {
 	const mbedtls_md_info_t* mdSHA256 = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-	// ...
-	return false;
+	if (mdSHA256 == NULL)
+	{
+		printf("Failed to get SHA256 md_info\n");
+		return false;
+	}
+
+	int result = mbedtls_hkdf(mdSHA256,
+		salt, saltSizeBytes,
+		secretMaterial, secretMaterialSizeBytes,
+		context, contextSizeBytes,
+		outputBuffer, outputBufferSizeBytes);
+
+	if (result != 0)
+	{
+		printf("mbedtls_hkdf failed with error: %d\n", result);
+		return false;
+	}
+
+	return true;
 }
 
 
