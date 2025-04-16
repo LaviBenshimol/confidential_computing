@@ -16,6 +16,7 @@
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/md.h"
 #include "mbedtls/ctr_drbg.h"
+#include "mbedtls/error.h"
 
 
 #ifdef WIN
@@ -307,24 +308,31 @@ bool CryptoWrapper::readRSAKeyFromFile(IN const char* keyFilename, IN const char
 	ByteSmartPtr bufferSmartPtr = Utils::readBufferFromFile(keyFilename);
 	if (bufferSmartPtr == NULL)
 	{
-		printf("Error reading keypair file\n");
+		printf("Error reading keypair file: %s\n", keyFilename);
 		return false;
 	}
 
-	int res = mbedtls_pk_parse_key(newContext, bufferSmartPtr, bufferSmartPtr.size(), (const BYTE*)filePassword, strnlen_s(filePassword, MAX_PASSWORD_SIZE_BYTES), getRandom, NULL);
+	int res = mbedtls_pk_parse_key(newContext,
+								   bufferSmartPtr, bufferSmartPtr.size(),
+								   (const BYTE*)filePassword,
+								   filePassword ? strnlen_s(filePassword, MAX_PASSWORD_SIZE_BYTES) : 0,
+								   NULL, NULL); // ✅ FIXED: don't use getRandom for PEM
+
 	if (res != 0)
 	{
-		printf("Error during mbedtls_pk_parse_key()\n");
+		char errBuf[128];
+		mbedtls_strerror(res, errBuf, sizeof(errBuf));
+		printf("mbedtls_pk_parse_key failed: -0x%04X (%s)\n", -res, errBuf);
+
 		cleanKeyContext(&newContext);
 		return false;
 	}
-	else
-	{
-		cleanKeyContext(pKeyContext);
-		*pKeyContext = newContext;
-		return true;
-	}
+
+	cleanKeyContext(pKeyContext);
+	*pKeyContext = newContext;
+	return true;
 }
+
 
 
 // bool CryptoWrapper::signMessageRsa3072Pss(IN const BYTE* message, IN size_t messageSizeBytes, IN KeypairContext* privateKeyContext, OUT BYTE* signatureBuffer, IN size_t signatureBufferSizeBytes)

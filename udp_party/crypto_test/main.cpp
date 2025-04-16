@@ -130,30 +130,36 @@ bool testSymmetricEncryption()
 }
 
 
-bool readRsaKeypair(const char* keypairFilename, const char* password, const char* certFilename, KeypairContext** pPrivateKeyContext, KeypairContext** pPublicKeyContext)
+bool readRsaKeypair(const char* keypairFilename, const char* password, const char* certFilename,
+					KeypairContext** pPrivateKeyContext, KeypairContext** pPublicKeyContext)
 {
 	// read the private key from private key file
 	if (!CryptoWrapper::readRSAKeyFromFile(keypairFilename, password, pPrivateKeyContext))
+	{
 		printf("Failed to read private key file: %s\n", keypairFilename);
 		return false;
+	}
 
 	// read the certificate containing the public key
 	ByteSmartPtr certBufferSmartPtr = Utils::readBufferFromFile(certFilename);
 	if (certBufferSmartPtr == NULL)
 	{
-		printf("Error reading certificate file\n");
+		printf("Error reading certificate file: %s\n", certFilename);
 		CryptoWrapper::cleanKeyContext(pPrivateKeyContext);
 		return false;
 	}
 
-	// read the public key from the buffer containing the certificate
-	if (CryptoWrapper::getPublicKeyFromCertificate(certBufferSmartPtr, certBufferSmartPtr.size(), pPublicKeyContext)) {
+	// extract the public key from the certificate
+	if (!CryptoWrapper::getPublicKeyFromCertificate(certBufferSmartPtr, certBufferSmartPtr.size(), pPublicKeyContext))
+	{
 		printf("Failed to extract public key from certificate: %s\n", certFilename);
+		CryptoWrapper::cleanKeyContext(pPrivateKeyContext);
 		return false;
 	}
-	// bool result = CryptoWrapper::getPublicKeyFromCertificate(certBufferSmartPtr, certBufferSmartPtr.size(), pPublicKeyContext);
+
 	return true;
 }
+
 
 
 bool testRsaSigning(KeypairContext* privateKeyContext, KeypairContext* publicKeyContext, bool toModifyMessage)
