@@ -134,6 +134,7 @@ bool readRsaKeypair(const char* keypairFilename, const char* password, const cha
 {
 	// read the private key from private key file
 	if (!CryptoWrapper::readRSAKeyFromFile(keypairFilename, password, pPrivateKeyContext))
+		printf("Failed to read private key file: %s\n", keypairFilename);
 		return false;
 
 	// read the certificate containing the public key
@@ -146,8 +147,12 @@ bool readRsaKeypair(const char* keypairFilename, const char* password, const cha
 	}
 
 	// read the public key from the buffer containing the certificate
-	bool result = CryptoWrapper::getPublicKeyFromCertificate(certBufferSmartPtr, certBufferSmartPtr.size(), pPublicKeyContext);
-	return result;
+	if (CryptoWrapper::getPublicKeyFromCertificate(certBufferSmartPtr, certBufferSmartPtr.size(), pPublicKeyContext)) {
+		printf("Failed to extract public key from certificate: %s\n", certFilename);
+		return false;
+	}
+	// bool result = CryptoWrapper::getPublicKeyFromCertificate(certBufferSmartPtr, certBufferSmartPtr.size(), pPublicKeyContext);
+	return true;
 }
 
 

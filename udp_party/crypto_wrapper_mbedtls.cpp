@@ -12,10 +12,11 @@
 #include "mbedtls/entropy.h"
 #include "mbedtls/dhm.h"
 #include "mbedtls/bignum.h"
-#include "mbedtls/md.h"
 #include "mbedtls/x509.h"
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/md.h"
+#include "mbedtls/ctr_drbg.h"
+
 
 #ifdef WIN
 #pragma comment (lib, "mbedtls.lib")
@@ -42,13 +43,10 @@ int getRandom(void* contextData, BYTE* output, size_t len)
 }
 
 
-#include "mbedtls/md.h"
 
-bool CryptoWrapper::hmac_SHA256(IN const BYTE* key, size_t keySizeBytes,
-								 IN const BYTE* message, size_t messageSizeBytes,
-								 OUT BYTE* macBuffer, IN size_t macBufferSizeBytes)
-{
-	/**
+
+
+/**
  * @brief Computes the HMAC of a given message using SHA-256 or SHA3-512 (if supported and key is long enough).
  *
  * This function calculates a Hash-based Message Authentication Code (HMAC) over the input message
@@ -73,6 +71,11 @@ bool CryptoWrapper::hmac_SHA256(IN const BYTE* key, size_t keySizeBytes,
  * @warning The caller must ensure that macBuffer is securely allocated and cleared if needed,
  *          especially when handling cryptographic outputs.
  */
+bool CryptoWrapper::hmac_SHA256(IN const BYTE* key, size_t keySizeBytes,
+								 IN const BYTE* message, size_t messageSizeBytes,
+								 OUT BYTE* macBuffer, IN size_t macBufferSizeBytes)
+{
+
 
 	if (key == NULL || message == NULL || macBuffer == NULL ||
 		keySizeBytes == 0 || messageSizeBytes == 0 || macBufferSizeBytes == 0)
@@ -262,29 +265,147 @@ bool CryptoWrapper::readRSAKeyFromFile(IN const char* keyFilename, IN const char
 }
 
 
-bool CryptoWrapper::signMessageRsa3072Pss(IN const BYTE* message, IN size_t messageSizeBytes, IN KeypairContext* privateKeyContext, OUT BYTE* signatureBuffer, IN size_t signatureBufferSizeBytes)
+// bool CryptoWrapper::signMessageRsa3072Pss(IN const BYTE* message, IN size_t messageSizeBytes, IN KeypairContext* privateKeyContext, OUT BYTE* signatureBuffer, IN size_t signatureBufferSizeBytes)
+// {
+// 	if (signatureBufferSizeBytes != SIGNATURE_SIZE_BYTES)
+// 	{
+// 		printf("Signature buffer size is wrong!\n");
+// 		return false;
+// 	}
+//
+// 	// ...
+// 	return false;
+// }
+/**
+ * @brief Signs a message using an RSA private key (any size) with PSS padding and SHA-256.
+ *
+ * This function computes the SHA-256 hash of the input message, and signs it using the provided
+ * RSA private key with RSASSA-PSS padding, as required by modern cryptographic standards.
+ * It supports any RSA key size; the signature buffer must be at least as large as the key size in bytes.
+ *
+ * @param[in]  message                  Pointer to the message to be signed.
+ * @param[in]  messageSizeBytes         Size of the message in bytes.
+ * @param[in]  privateKeyContext        Pointer to an initialized mbedtls_pk_context containing the RSA private key.
+ * @param[out] signatureBuffer          Pointer to the buffer where the resulting signature will be stored.
+ * @param[in]  signatureBufferSizeBytes Size of the signature buffer in bytes (must be >= key size).
+ *
+ * @return true on successful signature generation, false on error.
+ *
+ * @note This function uses SHA-256 as the message digest and applies RSASSA-PSS padding.
+ *       The caller is responsible for zeroizing the signature buffer after use.
+ */
+bool CryptoWrapper::signMessageRsa3072Pss(IN const BYTE* message, IN size_t messageSizeBytes,
+										  IN KeypairContext* privateKeyContext,
+										  OUT BYTE* signatureBuffer, IN size_t signatureBufferSizeBytes)
 {
-	if (signatureBufferSizeBytes != SIGNATURE_SIZE_BYTES)
-	{
-		printf("Signature buffer size is wrong!\n");
+	if (message == NULL || privateKeyContext == NULL || signatureBuffer == NULL)
 		return false;
-	}
 
-	// ...
+	if (!mbedtls_pk_can_do(privateKeyContext, MBEDTLS_PK_RSA))
+		return false;
+
+	size_t key_len = mbedtls_pk_get_len(privateKeyContext); // in bytes
+	if (signatureBufferSizeBytes < key_len)
+		return false;
+
+	int ret = 0;
+	mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
+	BYTE hash[32];
+	size_t sig_len = 0;  // Moved up to avoid goto jump over init
+
+	// Compute SHA256 hash of the message
+	ret = mbedtls_md(mbedtls_md_info_from_type(md_type), message, messageSizeBytes, hash);
+	if (ret != 0)
+		return false;
+
+	// Setup RNG
+	mbedtls_ctr_drbg_context ctr_drbg;
+	mbedtls_entropy_context entropy;
+	mbedtls_ctr_drbg_init(&ctr_drbg);
+	mbedtls_entropy_init(&entropy);
+
+	if ((ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0)) != 0)
+		goto cleanup;
+
+	// Sign the hash using RSASSA-PSS
+	ret = mbedtls_pk_sign(privateKeyContext, md_type,
+						  hash, 0,                          // hash and hash_len=0 for raw
+						  signatureBuffer, signatureBufferSizeBytes,
+						  &sig_len,
+						  mbedtls_ctr_drbg_random, &ctr_drbg);
+
+	if (ret != 0 || sig_len > signatureBufferSizeBytes)
+		goto cleanup;
+
+	mbedtls_ctr_drbg_free(&ctr_drbg);
+	mbedtls_entropy_free(&entropy);
+	return true;
+
+	cleanup:
+		mbedtls_ctr_drbg_free(&ctr_drbg);
+	mbedtls_entropy_free(&entropy);
 	return false;
 }
 
 
-bool CryptoWrapper::verifyMessageRsa3072Pss(IN const BYTE* message, IN size_t messageSizeBytes, IN KeypairContext* publicKeyContext, IN const BYTE* signature, IN size_t signatureSizeBytes, OUT bool* result)
+// bool CryptoWrapper::verifyMessageRsa3072Pss(IN const BYTE* message, IN size_t messageSizeBytes, IN KeypairContext* publicKeyContext, IN const BYTE* signature, IN size_t signatureSizeBytes, OUT bool* result)
+// {
+// 	if (signatureSizeBytes != SIGNATURE_SIZE_BYTES)
+// 	{
+// 		printf("Signature size is wrong!\n");
+// 		return false;
+// 	}
+//
+// 	// ...
+// 	return false;
+// }
+/**
+ * @brief Verifies a message signature using an RSA public key (any size) with PSS padding and SHA-256.
+ *
+ * This function computes the SHA-256 hash of the message and verifies the provided signature
+ * using the given RSA public key and RSASSA-PSS padding scheme. Supports any RSA key size.
+ *
+ * @param[in]  message                Pointer to the message whose signature is to be verified.
+ * @param[in]  messageSizeBytes       Size of the message in bytes.
+ * @param[in]  publicKeyContext       Pointer to an initialized mbedtls_pk_context containing the RSA public key.
+ * @param[in]  signature              Pointer to the signature to be verified.
+ * @param[in]  signatureSizeBytes     Size of the signature buffer in bytes.
+ * @param[out] result                 Pointer to boolean; set to true if signature is valid, false otherwise.
+ *
+ * @return true if verification was performed (regardless of outcome), false if an internal error occurred.
+ *
+ * @note This function uses SHA-256 as the message digest and assumes PSS padding.
+ */
+bool CryptoWrapper::verifyMessageRsa3072Pss(IN const BYTE* message, IN size_t messageSizeBytes,
+                                            IN KeypairContext* publicKeyContext,
+                                            IN const BYTE* signature, IN size_t signatureSizeBytes,
+                                            OUT bool* result)
 {
-	if (signatureSizeBytes != SIGNATURE_SIZE_BYTES)
-	{
-		printf("Signature size is wrong!\n");
-		return false;
-	}
+    if (message == NULL || publicKeyContext == NULL || signature == NULL || result == NULL)
+        return false;
 
-	// ...
-	return false;
+    *result = false;
+
+    if (!mbedtls_pk_can_do(publicKeyContext, MBEDTLS_PK_RSA))
+        return false;
+
+    size_t key_len = mbedtls_pk_get_len(publicKeyContext); // in bytes
+    if (signatureSizeBytes != key_len)
+        return true; // Valid call, but signature is not the correct size, so result = false
+
+    int ret = 0;
+    mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
+    BYTE hash[32];
+
+    ret = mbedtls_md(mbedtls_md_info_from_type(md_type), message, messageSizeBytes, hash);
+    if (ret != 0)
+        return false;
+
+    ret = mbedtls_pk_verify(publicKeyContext, md_type, hash, 0, signature, signatureSizeBytes);
+    if (ret == 0)
+        *result = true;
+
+    return true;
 }
 
 
