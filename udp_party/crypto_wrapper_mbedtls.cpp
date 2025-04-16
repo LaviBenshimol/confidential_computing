@@ -174,85 +174,68 @@ size_t CryptoWrapper::getPlaintextSizeAES_GCM256(IN size_t ciphertextSizeBytes)
 
 
 bool CryptoWrapper::encryptAES_GCM256(IN const BYTE* key, IN size_t keySizeBytes,
-	IN const BYTE* plaintext, IN size_t plaintextSizeBytes,
-	IN const BYTE* aad, IN size_t aadSizeBytes,
-	OUT BYTE* ciphertextBuffer, IN size_t ciphertextBufferSizeBytes, OUT size_t* pCiphertextSizeBytes)
+    IN const BYTE* plaintext, IN size_t plaintextSizeBytes,
+    IN const BYTE* aad, IN size_t aadSizeBytes,
+    OUT BYTE* ciphertextBuffer, IN size_t ciphertextBufferSizeBytes, OUT size_t* pCiphertextSizeBytes)
 {
-	BYTE iv[IV_SIZE_BYTES]; // 12-byte IV
-	BYTE mac[GMAC_SIZE_BYTES]; // 16-byte MAC tag
-	size_t ciphertextSizeBytes = getCiphertextSizeAES_GCM256(plaintextSizeBytes);
+    BYTE iv[IV_SIZE_BYTES];
+    BYTE tag[GMAC_SIZE_BYTES];
+    size_t ciphertextSizeBytes = getCiphertextSizeAES_GCM256(plaintextSizeBytes);
 
-    // Sanity check - have either plaintext or AAD
-	if ((plaintext == NULL || plaintextSizeBytes == 0) && (aad == NULL || aadSizeBytes == 0))
-	{
-		return false;
-	}
+    if ((plaintext == NULL || plaintextSizeBytes == 0) && (aad == NULL || aadSizeBytes == 0)) {
+        return false;
+    }
 
-	if (ciphertextBuffer == NULL || ciphertextBufferSizeBytes == 0)
-	{
-		if (pCiphertextSizeBytes != NULL)
-		{
-			*pCiphertextSizeBytes = ciphertextSizeBytes;
-			return true;
-		}
-		else
-		{
-			return false;
-		}
-	}
+    if (ciphertextBuffer == NULL || ciphertextBufferSizeBytes == 0) {
+        if (pCiphertextSizeBytes != NULL) {
+            *pCiphertextSizeBytes = ciphertextSizeBytes;
+            return true;
+        } else {
+            return false;
+        }
+    }
 
-	if (ciphertextBufferSizeBytes < ciphertextSizeBytes)
-	{
-		return false;
-	}
+    if (ciphertextBufferSizeBytes < ciphertextSizeBytes) {
+        return false;
+    }
 
-	// === Step 1: Generate a random IV ===
-	if (!Utils::generateRandom(iv, IV_SIZE_BYTES)) {
-		return false;
-	}
+    if (!Utils::generateRandom(iv, IV_SIZE_BYTES)) {
+        return false;
+    }
 
-	// === Step 2: Initialize GCM context ===
-	mbedtls_gcm_context gcm;
-	mbedtls_gcm_init(&gcm);
+    mbedtls_gcm_context gcm;
+    mbedtls_gcm_init(&gcm);
 
-	// Set the AES-256 key (key size is in bits!)
-	if (mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, key, keySizeBytes * 8) != 0) {
-		mbedtls_gcm_free(&gcm);
-		return false;
-	}
+    if (mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, key, keySizeBytes * 8) != 0) {
+        mbedtls_gcm_free(&gcm);
+        return false;
+    }
 
-	// === Step 3: Perform GCM encryption with MAC (GMAC) ===
-	BYTE* ciphertext = ciphertextBuffer + IV_SIZE_BYTES;
-	int ret = mbedtls_gcm_crypt_and_tag(
-		&gcm,
-		MBEDTLS_GCM_ENCRYPT,
-		plaintextSizeBytes,
-		iv, IV_SIZE_BYTES,
+    BYTE* ciphertext = ciphertextBuffer + IV_SIZE_BYTES;
+
+	int ret = mbedtls_gcm_crypt_and_tag(&gcm, MBEDTLS_GCM_ENCRYPT,
+		plaintextSizeBytes, iv, IV_SIZE_BYTES,
 		aad, aadSizeBytes,
-		plaintext,
-		ciphertext,
-		GMAC_SIZE_BYTES,
-		mac);
+		plaintext, ciphertext,
+		GMAC_SIZE_BYTES, tag);
 
-	mbedtls_gcm_free(&gcm);
 
-	if (ret != 0) {
-		return false;
-	}
+    mbedtls_gcm_free(&gcm);
 
-	// === Step 4: Copy IV to the beginning of the ciphertext buffer ===
-	memcpy(ciphertextBuffer, iv, IV_SIZE_BYTES);
+    if (ret != 0) {
+        return false;
+    }
 
-	// === Step 5: Copy MAC tag to the end of the buffer ===
-	memcpy(ciphertextBuffer + IV_SIZE_BYTES + plaintextSizeBytes, mac, GMAC_SIZE_BYTES);
+    memcpy(ciphertextBuffer, iv, IV_SIZE_BYTES);
+    memcpy(ciphertextBuffer + IV_SIZE_BYTES + plaintextSizeBytes, tag, GMAC_SIZE_BYTES);
 
-	// === Step 6: Return the total size to the caller ===
-	if (pCiphertextSizeBytes != NULL) {
-		*pCiphertextSizeBytes = ciphertextSizeBytes;
-	}
+    if (pCiphertextSizeBytes != NULL) {
+        *pCiphertextSizeBytes = ciphertextSizeBytes;
+    }
 
-	return true;
+    return true;
 }
+
 
 
 bool CryptoWrapper::decryptAES_GCM256(IN const BYTE* key, IN size_t keySizeBytes,
@@ -260,39 +243,57 @@ bool CryptoWrapper::decryptAES_GCM256(IN const BYTE* key, IN size_t keySizeBytes
 	IN const BYTE* aad, IN size_t aadSizeBytes,
 	OUT BYTE* plaintextBuffer, IN size_t plaintextBufferSizeBytes, OUT size_t* pPlaintextSizeBytes)
 {
-	if (ciphertext == NULL || ciphertextSizeBytes < (IV_SIZE_BYTES + GMAC_SIZE_BYTES))
-	{
+	if (ciphertext == NULL || ciphertextSizeBytes < (IV_SIZE_BYTES + GMAC_SIZE_BYTES)) {
 		return false;
 	}
 
 	size_t plaintextSizeBytes = getPlaintextSizeAES_GCM256(ciphertextSizeBytes);
-	
-	if (plaintextBuffer == NULL || plaintextBufferSizeBytes == 0)
-	{
-		if (pPlaintextSizeBytes != NULL)
-		{
+
+	if (plaintextBuffer == NULL || plaintextBufferSizeBytes == 0) {
+		if (pPlaintextSizeBytes != NULL) {
 			*pPlaintextSizeBytes = plaintextSizeBytes;
 			return true;
-		}
-		else
-		{
+		} else {
 			return false;
 		}
 	}
-	
-	if (plaintextBufferSizeBytes < plaintextSizeBytes)
-	{
+
+	if (plaintextBufferSizeBytes < plaintextSizeBytes) {
 		return false;
 	}
 
-	// ...
-	
+	const BYTE* iv = ciphertext;
+	const BYTE* actualCiphertext = ciphertext + IV_SIZE_BYTES;
+	const BYTE* tag = ciphertext + IV_SIZE_BYTES + plaintextSizeBytes;
 
-	if (pPlaintextSizeBytes != NULL)
-	{
+	mbedtls_gcm_context gcm;
+	mbedtls_gcm_init(&gcm);
+
+	if (mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, key, keySizeBytes * 8) != 0) {
+		mbedtls_gcm_free(&gcm);
+		return false;
+	}
+
+	int ret = mbedtls_gcm_auth_decrypt(
+		&gcm,
+		plaintextSizeBytes,
+		iv, IV_SIZE_BYTES,
+		aad, aadSizeBytes,
+		tag, GMAC_SIZE_BYTES,
+		actualCiphertext,
+		plaintextBuffer);
+
+	mbedtls_gcm_free(&gcm);
+
+	if (ret != 0) {
+		return false;
+	}
+
+	if (pPlaintextSizeBytes != NULL) {
 		*pPlaintextSizeBytes = plaintextSizeBytes;
 	}
-	return false;
+
+	return true;
 }
 
 
@@ -516,43 +517,116 @@ bool CryptoWrapper::loadPublicKeyFromPemBuffer(INOUT KeypairContext* context, IN
 }
 
 
-bool CryptoWrapper::startDh(OUT DhContext** pDhContext, OUT BYTE* publicKeyBuffer, IN size_t publicKeyBufferSizeBytes)
+bool CryptoWrapper::startDh(DhContext** pDhContext, BYTE* publicKeyBuffer, size_t publicKeyBufferSizeBytes)
 {
-	DhContext* dhContext = (DhContext*)Utils::allocateBuffer(sizeof(DhContext));
-	if (dhContext == NULL)
+    //printf("[DEBUG] startDh() function entered\n");
+
+    // Allocate DH context
+    DhContext* dhContext = (DhContext*)Utils::allocateBuffer(sizeof(DhContext));
+    if (dhContext == NULL)
+    {
+        //printf("[startDh] Memory allocation failed\n");
+        return false;
+    }
+
+    mbedtls_dhm_init(dhContext);
+
+    // Define P and G arrays from MbedTLS macros
+    static const unsigned char dhm_P[] = MBEDTLS_DHM_RFC3526_MODP_3072_P_BIN;
+    static const unsigned char dhm_G[] = MBEDTLS_DHM_RFC3526_MODP_3072_G_BIN;
+
+    mbedtls_mpi P, G;
+    mbedtls_mpi_init(&P);
+    mbedtls_mpi_init(&G);
+
+    if (mbedtls_mpi_read_binary(&P, dhm_P, sizeof(dhm_P)) != 0 ||
+        mbedtls_mpi_read_binary(&G, dhm_G, sizeof(dhm_G)) != 0)
+    {
+        //printf("[startDh] Error reading P or G\n");
+        mbedtls_mpi_free(&P);
+        mbedtls_mpi_free(&G);
+        cleanDhContext(&dhContext);
+        return false;
+    }
+
+    if (mbedtls_dhm_set_group(dhContext, &P, &G) != 0)
+    {
+        //printf("[startDh] Failed to set P/G group\n");
+        mbedtls_mpi_free(&P);
+        mbedtls_mpi_free(&G);
+        cleanDhContext(&dhContext);
+        return false;
+    }
+
+    mbedtls_mpi_free(&P);
+    mbedtls_mpi_free(&G);
+
+    // Generate DH public key
+    size_t pubKeyLen = mbedtls_dhm_get_len(dhContext);
+    if (publicKeyBufferSizeBytes < pubKeyLen)
+    {
+        //printf("[startDh] Buffer too small! Required: %zu, Provided: %zu\n", pubKeyLen, publicKeyBufferSizeBytes);
+        cleanDhContext(&dhContext);
+        return false;
+    }
+
+    if (mbedtls_dhm_make_public(dhContext, (int)pubKeyLen,
+                                publicKeyBuffer, publicKeyBufferSizeBytes,
+                                getRandom, NULL) != 0)
+    {
+        //printf("[startDh] Failed to make public key\n");
+        cleanDhContext(&dhContext);
+        return false;
+    }
+
+    //printf("[startDh] Public key generated. First 4 bytes: %02x %02x %02x %02x\n",
+        //publicKeyBuffer[0], publicKeyBuffer[1], publicKeyBuffer[2], publicKeyBuffer[3]);
+
+    *pDhContext = dhContext;
+    return true;
+}
+
+
+
+
+
+bool CryptoWrapper::getDhSharedSecret(INOUT DhContext* dhContext,
+	IN const BYTE* peerPublicKey, IN size_t peerPublicKeySizeBytes,
+	OUT BYTE* sharedSecretBuffer, IN size_t sharedSecretBufferSizeBytes)
+{
+	if (dhContext == NULL || peerPublicKey == NULL || sharedSecretBuffer == NULL)
 	{
-		printf("Error during memory allocation in startDh()\n");
+		//printf("[getDhSharedSecret] Invalid input parameters!\n");
 		return false;
 	}
-	mbedtls_dhm_init(dhContext);
 
-	mbedtls_mpi P;
-	mbedtls_mpi G;
-	mbedtls_mpi_init(&P);
-	mbedtls_mpi_init(&G);
+	//printf("[getDhSharedSecret] Reading peer's public key (size: %zu)...\n", peerPublicKeySizeBytes);
+	if (mbedtls_dhm_read_public(dhContext, peerPublicKey, peerPublicKeySizeBytes) != 0)
+	{
+		//printf("[getDhSharedSecret] Failed to read peer's public key\n");
+		return false;
+	}
 
-	const BYTE pBin[] = MBEDTLS_DHM_RFC3526_MODP_3072_P_BIN;
-	const BYTE gBin[] = MBEDTLS_DHM_RFC3526_MODP_3072_G_BIN;
+	size_t expectedSize = mbedtls_dhm_get_len(dhContext);
+	if (sharedSecretBufferSizeBytes < expectedSize)
+	{
+		//printf("[getDhSharedSecret] Shared secret buffer is too small! Required: %zu, Provided: %zu\n",
+			   //expectedSize, sharedSecretBufferSizeBytes);
+		return false;
+	}
 
-	// select the finite group modulus
-	mbedtls_mpi_read_binary(&P, pBin, sizeof(pBin));
+	size_t actualSize = 0;
+	int ret = mbedtls_dhm_calc_secret(dhContext, sharedSecretBuffer, sharedSecretBufferSizeBytes, &actualSize, getRandom, NULL);
+	if (ret != 0)
+	{
+		//printf("[getDhSharedSecret] Failed to compute shared secret (mbedtls_dhm_calc_secret returned %d)\n", ret);
+		return false;
+	}
 
-	// select the pre-agreed generator element of the finite group
-	mbedtls_mpi_read_binary(&G, gBin, sizeof(gBin));
-
-
-	// ...
-
-	cleanDhContext(&dhContext);
-	return false;
+	//printf("[getDhSharedSecret] Shared secret computed successfully (size: %zu)\n", actualSize);
+	return true;
 }
 
-
-bool CryptoWrapper::getDhSharedSecret(INOUT DhContext* dhContext, IN const BYTE* peerPublicKey, IN size_t peerPublicKeySizeBytes, OUT BYTE* sharedSecretBuffer, IN size_t sharedSecretBufferSizeBytes)
-{
-	// ...
-	return false;
-}
 
 
 void CryptoWrapper::cleanDhContext(INOUT DhContext** pDhContext)
