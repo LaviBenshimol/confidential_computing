@@ -246,6 +246,33 @@ bool testCertificateChecking(const char* certFilename, const char* caCertFilenam
 	return result;
 }
 
+bool testMyEncryptionOnly()
+{
+	BYTE key[32]; // AES-256
+	Utils::generateRandom(key, 32);
+
+	const char* plaintext = "hello cryptography!";
+	size_t plaintextSize = strlen(plaintext);
+
+	BYTE ciphertext[1000];
+	size_t ciphertextSize = 0;
+
+	bool result = CryptoWrapper::encryptAES_GCM256(
+		key, sizeof(key),
+		(const BYTE*)plaintext, plaintextSize,
+		NULL, 0, // No AAD
+		ciphertext, sizeof(ciphertext), &ciphertextSize);
+
+	if (!result) {
+		printf("Encryption FAILED!\n");
+		return false;
+	}
+
+	printf("Encryption SUCCEEDED! Ciphertext size: %zu\n", ciphertextSize);
+	return true;
+}
+
+
 
 static constexpr const char* RSA_KEY_FILENAME = "bob.key";
 static constexpr const char* RSA_KEY_PASSWORD = "bobkey";
@@ -261,6 +288,11 @@ int main(int argc, char** argv)
 		printf("testHMAC PASSED!\n");
 	else
 		printf("testHMAC FAILED!\n");
+
+	if (testMyEncryptionOnly())
+		printf("testMyEncryptionOnly PASSED!\n");
+	else
+		printf("testMyEncryptionOnly FAILED!\n");
 
 	if (testSymmetricEncryption())
 		printf("testSymmetricEncryption PASSED!\n");

@@ -84,10 +84,11 @@ bool CryptoWrapper::encryptAES_GCM256(IN const BYTE* key, IN size_t keySizeBytes
 	IN const BYTE* aad, IN size_t aadSizeBytes,
 	OUT BYTE* ciphertextBuffer, IN size_t ciphertextBufferSizeBytes, OUT size_t* pCiphertextSizeBytes)
 {
-	BYTE iv[IV_SIZE_BYTES];
-	BYTE mac[GMAC_SIZE_BYTES];
+	BYTE iv[IV_SIZE_BYTES]; // 12-byte IV
+	BYTE mac[GMAC_SIZE_BYTES]; // 16-byte MAC tag
 	size_t ciphertextSizeBytes = getCiphertextSizeAES_GCM256(plaintextSizeBytes);
-	
+
+    // Sanity check - have either plaintext or AAD
 	if ((plaintext == NULL || plaintextSizeBytes == 0) && (aad == NULL || aadSizeBytes == 0))
 	{
 		return false;
@@ -111,8 +112,52 @@ bool CryptoWrapper::encryptAES_GCM256(IN const BYTE* key, IN size_t keySizeBytes
 		return false;
 	}
 
-	// ...
-	return false;
+	// === Step 1: Generate a random IV ===
+	if (!Utils::generateRandom(iv, IV_SIZE_BYTES)) {
+		return false;
+	}
+
+	// === Step 2: Initialize GCM context ===
+	mbedtls_gcm_context gcm;
+	mbedtls_gcm_init(&gcm);
+
+	// Set the AES-256 key (key size is in bits!)
+	if (mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, key, keySizeBytes * 8) != 0) {
+		mbedtls_gcm_free(&gcm);
+		return false;
+	}
+
+	// === Step 3: Perform GCM encryption with MAC (GMAC) ===
+	BYTE* ciphertext = ciphertextBuffer + IV_SIZE_BYTES;
+	int ret = mbedtls_gcm_crypt_and_tag(
+		&gcm,
+		MBEDTLS_GCM_ENCRYPT,
+		plaintextSizeBytes,
+		iv, IV_SIZE_BYTES,
+		aad, aadSizeBytes,
+		plaintext,
+		ciphertext,
+		GMAC_SIZE_BYTES,
+		mac);
+
+	mbedtls_gcm_free(&gcm);
+
+	if (ret != 0) {
+		return false;
+	}
+
+	// === Step 4: Copy IV to the beginning of the ciphertext buffer ===
+	memcpy(ciphertextBuffer, iv, IV_SIZE_BYTES);
+
+	// === Step 5: Copy MAC tag to the end of the buffer ===
+	memcpy(ciphertextBuffer + IV_SIZE_BYTES + plaintextSizeBytes, mac, GMAC_SIZE_BYTES);
+
+	// === Step 6: Return the total size to the caller ===
+	if (pCiphertextSizeBytes != NULL) {
+		*pCiphertextSizeBytes = ciphertextSizeBytes;
+	}
+
+	return true;
 }
 
 
