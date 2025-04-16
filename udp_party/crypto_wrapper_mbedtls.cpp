@@ -15,7 +15,7 @@
 #include "mbedtls/md.h"
 #include "mbedtls/x509.h"
 #include "mbedtls/x509_crt.h"
-#include "mbedtls/md.h"
+
 
 #ifdef WIN
 #pragma comment (lib, "mbedtls.lib")
@@ -99,7 +99,6 @@ bool CryptoWrapper::hmac_SHA256(IN const BYTE* key, size_t keySizeBytes,
 		mbedtls_md_free(&ctx);
 	return success;
 }
-
 
 
 bool CryptoWrapper::deriveKey_HKDF_SHA256(IN const BYTE* salt, IN size_t saltSizeBytes,
