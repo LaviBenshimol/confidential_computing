@@ -15,7 +15,7 @@
 #include "mbedtls/md.h"
 #include "mbedtls/x509.h"
 #include "mbedtls/x509_crt.h"
-
+#include "mbedtls/md.h"
 
 #ifdef WIN
 #pragma comment (lib, "mbedtls.lib")
@@ -42,18 +42,64 @@ int getRandom(void* contextData, BYTE* output, size_t len)
 }
 
 
-bool CryptoWrapper::hmac_SHA256(IN const BYTE* key, IN size_t keySizeBytes, IN const BYTE* message, IN size_t messageSizeBytes, OUT BYTE* macBuffer, IN size_t macBufferSizeBytes)
+#include "mbedtls/md.h"
+
+bool CryptoWrapper::hmac_SHA256(IN const BYTE* key, size_t keySizeBytes,
+								 IN const BYTE* message, size_t messageSizeBytes,
+								 OUT BYTE* macBuffer, IN size_t macBufferSizeBytes)
 {
-	const mbedtls_md_info_t* md_infoSha256 = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-	if (macBufferSizeBytes < mbedtls_md_get_size(md_infoSha256))
+	if (key == NULL || message == NULL || macBuffer == NULL ||
+		keySizeBytes == 0 || messageSizeBytes == 0 || macBufferSizeBytes == 0)
 	{
-		printf("mbedtls_md_hmac failed - output buffer too small!\n");
 		return false;
 	}
 
-	// ...
-	return false;
+	// Choose digest type based on key size (just an example strategy)
+	mbedtls_md_type_t hashType = MBEDTLS_MD_SHA256;
+
+#if defined(MBEDTLS_MD_SHA3_512)
+	if (keySizeBytes >= 48) // Arbitrary: assume if key is long enough, user wants SHA3-512
+	{
+		hashType = MBEDTLS_MD_SHA3_512;
+	}
+#endif
+
+	const mbedtls_md_info_t* md_info = mbedtls_md_info_from_type(hashType);
+	if (md_info == NULL)
+	{
+		return false;
+	}
+
+	size_t digestSize = mbedtls_md_get_size(md_info);
+	if (macBufferSizeBytes < digestSize)
+	{
+		return false;
+	}
+
+	mbedtls_md_context_t ctx;
+	mbedtls_md_init(&ctx);
+
+	bool success = false;
+
+	if (mbedtls_md_setup(&ctx, md_info, 1 /* use HMAC */) != 0)
+		goto cleanup;
+
+	if (mbedtls_md_hmac_starts(&ctx, key, keySizeBytes) != 0)
+		goto cleanup;
+
+	if (mbedtls_md_hmac_update(&ctx, message, messageSizeBytes) != 0)
+		goto cleanup;
+
+	if (mbedtls_md_hmac_finish(&ctx, macBuffer) != 0)
+		goto cleanup;
+
+	success = true;
+
+	cleanup:
+		mbedtls_md_free(&ctx);
+	return success;
 }
+
 
 
 bool CryptoWrapper::deriveKey_HKDF_SHA256(IN const BYTE* salt, IN size_t saltSizeBytes,

@@ -31,7 +31,7 @@
 // ****************************** Constants ****************************************
 static constexpr size_t MAX_PASSWORD_SIZE_BYTES		= 64;
 static constexpr size_t SYMMETRIC_KEY_SIZE_BYTES	= 1; //???
-static constexpr size_t HMAC_SIZE_BYTES				= 1; //???
+static constexpr size_t HMAC_SIZE_BYTES				= 32; //???
 static constexpr size_t SIGNATURE_SIZE_BYTES		= 1; //???
 static constexpr size_t DH_KEY_SIZE_BYTES			= 1; //???
 
@@ -83,7 +83,7 @@ public:
 	static void cleanKeyContext(INOUT KeypairContext** pKeyContext);
 
 
-	// ********************** Diffie–Hellman *******************************
+	// ********************** Diffieï¿½Hellman *******************************
 	static bool startDh(OUT DhContext** pDhContext, OUT BYTE* publicKeyBuffer, IN size_t publicKeyBufferSizeBytes);
 
 	static bool getDhSharedSecret(INOUT DhContext* dhContext, IN const BYTE* peerPublicKey, IN size_t peerPublicKeySizeBytes, OUT BYTE* sharedSecretBuffer, IN size_t sharedSecretBufferSizeBytes);
