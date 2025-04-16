@@ -24,11 +24,11 @@
 
 
 static constexpr size_t PEM_BUFFER_SIZE_BYTES	= 10000;
-# SHA3 512 bits is 64 Bytes (slide 15)
+// SHA3 512 bits is 64 Bytes (slide 15)
 static constexpr size_t HASH_SIZE_BYTES			= 64;
-# Recommanded IV is 96 bits - 12 Bytes (Slide 12)
+// Recommanded IV is 96 bits - 12 Bytes (Slide 12)
 static constexpr size_t IV_SIZE_BYTES			= 12;
-# Output of GMAC is always 128 bits (slide 15)
+// Output of GMAC is always 128 bits (slide 15)
 static constexpr size_t GMAC_SIZE_BYTES			= 16;
 
 
