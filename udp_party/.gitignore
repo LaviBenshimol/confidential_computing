@@ -1,3 +1,2 @@
 **/.idea/
 **/mbedtls/
-crypto_test/*.o
