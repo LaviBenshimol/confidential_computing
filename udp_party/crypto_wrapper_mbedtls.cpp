@@ -17,6 +17,7 @@
 #include "mbedtls/md.h"
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/error.h"
+#include "mbedtls/oid.h"
 
 
 #ifdef WIN
@@ -564,22 +565,24 @@ void CryptoWrapper::cleanDhContext(INOUT DhContext** pDhContext)
 	}
 }
 
-
-bool CryptoWrapper::checkCertificate(IN const BYTE* cACcertBuffer, IN size_t cACertSizeBytes, IN const BYTE* certBuffer, IN size_t certSizeBytes, IN const char* expectedCN)
+bool CryptoWrapper::checkCertificate(IN const BYTE* cACcertBuffer, IN size_t cACertSizeBytes,
+									 IN const BYTE* certBuffer, IN size_t certSizeBytes,
+									 IN const char* expectedCN)
 {
 	mbedtls_x509_crt cacert;
 	mbedtls_x509_crt clicert;
 	mbedtls_x509_crt_init(&cacert);
 	mbedtls_x509_crt_init(&clicert);
-	uint32_t flags;
-	int res = -1;
+	uint32_t flags = 0;
 
+	// Parse CA certificate
 	if (mbedtls_x509_crt_parse(&cacert, cACcertBuffer, cACertSizeBytes) != 0)
 	{
 		printf("Error parsing CA certificate\n");
 		return false;
 	}
 
+	// Parse client certificate
 	if (mbedtls_x509_crt_parse(&clicert, certBuffer, certSizeBytes) != 0)
 	{
 		printf("Error parsing certificate to verify\n");
@@ -587,12 +590,73 @@ bool CryptoWrapper::checkCertificate(IN const BYTE* cACcertBuffer, IN size_t cAC
 		return false;
 	}
 
-	// ...
+	// Verify certificate using CA
+	if (mbedtls_x509_crt_verify(&clicert, &cacert, NULL, NULL, &flags, NULL, NULL) != 0)
+	{
+		printf("Certificate verification failed with flags: 0x%08x\n", flags);
+		mbedtls_x509_crt_free(&cacert);
+		mbedtls_x509_crt_free(&clicert);
+		return false;
+	}
+
+	// Extract CN from subject
+	const mbedtls_x509_name* name = &clicert.subject;
+	while (name != NULL)
+	{
+		if (MBEDTLS_OID_CMP(MBEDTLS_OID_AT_CN, &name->oid) == 0)
+		{
+			char cn[256] = {0};
+			memcpy(cn, name->val.p, name->val.len);
+			cn[name->val.len] = '\0';
+
+			if (strcmp(cn, expectedCN) == 0)
+			{
+				mbedtls_x509_crt_free(&cacert);
+				mbedtls_x509_crt_free(&clicert);
+				return true;
+			}
+			else
+			{
+				printf("CN mismatch: got '%s', expected '%s'\n", cn, expectedCN);
+				break;
+			}
+		}
+		name = name->next;
+	}
 
 	mbedtls_x509_crt_free(&cacert);
 	mbedtls_x509_crt_free(&clicert);
-	return (res == 0);
+	return false;
 }
+
+// bool CryptoWrapper::checkCertificate(IN const BYTE* cACcertBuffer, IN size_t cACertSizeBytes, IN const BYTE* certBuffer, IN size_t certSizeBytes, IN const char* expectedCN)
+// {
+// 	mbedtls_x509_crt cacert;
+// 	mbedtls_x509_crt clicert;
+// 	mbedtls_x509_crt_init(&cacert);
+// 	mbedtls_x509_crt_init(&clicert);
+// 	uint32_t flags;
+// 	int res = -1;
+//
+// 	if (mbedtls_x509_crt_parse(&cacert, cACcertBuffer, cACertSizeBytes) != 0)
+// 	{
+// 		printf("Error parsing CA certificate\n");
+// 		return false;
+// 	}
+//
+// 	if (mbedtls_x509_crt_parse(&clicert, certBuffer, certSizeBytes) != 0)
+// 	{
+// 		printf("Error parsing certificate to verify\n");
+// 		mbedtls_x509_crt_free(&cacert);
+// 		return false;
+// 	}
+//
+// 	// ...
+//
+// 	mbedtls_x509_crt_free(&cacert);
+// 	mbedtls_x509_crt_free(&clicert);
+// 	return (res == 0);
+// }
 
 
 bool CryptoWrapper::getPublicKeyFromCertificate(IN const BYTE* certBuffer, IN size_t certSizeBytes, OUT KeypairContext** pPublicKeyContext)
