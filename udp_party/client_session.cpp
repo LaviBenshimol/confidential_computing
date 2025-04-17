@@ -3,7 +3,6 @@
 #include "client_session.h"
 
 
-
 ClientSession::ClientSession(unsigned int remotePort, const char* remoteIpAddress, const char* keyFilename, char* password, const char* certFilename, const char* rootCaFilename, const char* peerIdentity):Session(keyFilename, password, certFilename, rootCaFilename, peerIdentity)
 {
     if (!active())
