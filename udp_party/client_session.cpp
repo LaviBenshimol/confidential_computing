@@ -37,17 +37,17 @@ ClientSession::ClientSession(unsigned int remotePort, const char* remoteIpAddres
     }
 
     // here we need to verify the DH message 2 part
-	/*
+
     if (!verifySigmaMessage(2, pPayload, (size_t)payloadSize))
     {
         _state = UNINITIALIZED_SESSION_STATE;
         cleanDhData();
         return;
     }
-	*/
+
 
     // send SIGMA message 3 part
-    /*
+
 	ByteSmartPtr message3 = prepareSigmaMessage(3);
     if (message3 == NULL)
     {
@@ -55,7 +55,7 @@ ClientSession::ClientSession(unsigned int remotePort, const char* remoteIpAddres
         cleanDhData();
         return;
     }
-	*/
+
 
     if (!sendMessageInternal(HELLO_DONE_SESSION_MESSAGE, NULL, 0))
     {
