@@ -11,15 +11,30 @@ ClientSession::ClientSession(unsigned int remotePort, const char* remoteIpAddres
     }
 
     setRemoteAddress(remoteIpAddress, remotePort);
-
-    // Perhaps we can use the first message as Sigma message #1?
-    BYTE dummy[DH_KEY_SIZE_BYTES];
-    if (!sendMessageInternal(HELLO_SESSION_MESSAGE, dummy, DH_KEY_SIZE_BYTES))
+    // _dhContext = NULL;
+    // Initialize DH and generate our DH public key
+    if (!CryptoWrapper::startDh(&_dhContext, _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES))
     {
+        printf("Failed to initialize DH key exchange\n");
+        _state = UNINITIALIZED_SESSION_STATE;
+        return;
+    }
+    // Send first message with our DH public key
+    if (!sendMessageInternal(HELLO_SESSION_MESSAGE, _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES))
+    {
+        printf("Failed to send HELLO message with DH key\n");
         _state = UNINITIALIZED_SESSION_STATE;
         cleanDhData();
         return;
     }
+    // Perhaps we can use the first message as Sigma message #1?
+    // BYTE dummy[DH_KEY_SIZE_BYTES];
+    // if (!sendMessageInternal(HELLO_SESSION_MESSAGE, dummy, DH_KEY_SIZE_BYTES))
+    // {
+    //     _state = UNINITIALIZED_SESSION_STATE;
+    //     cleanDhData();
+    //     return;
+    // }
     _state = HELLO_SESSION_MESSAGE;
 
     BYTE messageBuffer[MESSAGE_BUFFER_SIZE_BYTES];
@@ -55,13 +70,20 @@ ClientSession::ClientSession(unsigned int remotePort, const char* remoteIpAddres
         return;
     }
 
-
-    if (!sendMessageInternal(HELLO_DONE_SESSION_MESSAGE, NULL, 0))
+    // Send HELLO_DONE with SIGMA message 3
+    if (!sendMessageInternal(HELLO_DONE_SESSION_MESSAGE, message3, message3.size()))
     {
+        printf("Failed to send HELLO_DONE message\n");
         _state = UNINITIALIZED_SESSION_STATE;
         cleanDhData();
         return;
     }
+    // if (!sendMessageInternal(HELLO_DONE_SESSION_MESSAGE, NULL, 0))
+    // {
+    //     _state = UNINITIALIZED_SESSION_STATE;
+    //     cleanDhData();
+    //     return;
+    // }
 
     // now we will calculate the session key
     deriveSessionKey();
