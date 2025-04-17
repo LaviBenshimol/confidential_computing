@@ -591,38 +591,163 @@ bool Session::verifySigmaMessage(unsigned int messageType, const BYTE* pPayload,
 // }
 //
 
+
 ByteSmartPtr Session::prepareEncryptedMessage(unsigned int messageType, const BYTE* message, size_t messageSize)
 {
-    // we will do a plain copy for now
-    size_t encryptedMessageSize = messageSize;
-    BYTE* ciphertext = (BYTE*)Utils::allocateBuffer(encryptedMessageSize);
-    if (ciphertext == NULL)
+    // If we have a session key, encrypt the message
+    if (_sessionKey[0] != 0)  // Check if we have a valid session key
     {
-        return NULL;
+        // Calculate the size needed for the encrypted message
+        size_t ciphertextSize = CryptoWrapper::getCiphertextSizeAES_GCM256(messageSize);
+        BYTE* ciphertext = (BYTE*)Utils::allocateBuffer(ciphertextSize);
+        if (ciphertext == NULL)
+        {
+            return NULL;
+        }
+
+        // Use message type and session ID as additional authenticated data (AAD)
+        // This binds the encrypted data to the specific session and message type
+        MessageHeader aadHeader;
+        aadHeader.sessionId = _sessionId;
+        aadHeader.messageType = messageType;
+        aadHeader.messageCounter = _outgoingMessageCounter;
+        aadHeader.payloadSize = (unsigned int)messageSize;
+
+        size_t actualCiphertextSize = 0;
+        if (!CryptoWrapper::encryptAES_GCM256(
+            _sessionKey, SYMMETRIC_KEY_SIZE_BYTES,
+            message, messageSize,
+            (const BYTE*)&aadHeader, sizeof(aadHeader),
+            ciphertext, ciphertextSize, &actualCiphertextSize))
+        {
+            printf("Error encrypting message\n");
+            Utils::freeBuffer(ciphertext);
+            return NULL;
+        }
+
+        ByteSmartPtr result(ciphertext, actualCiphertextSize);
+        return result;
     }
+    else
+    {
+        // Fallback to plain copy if no session key is available
+        // (This should not happen in a secure implementation)
+        printf("Warning: sending unencrypted message - no session key available\n");
+        size_t encryptedMessageSize = messageSize;
+        BYTE* ciphertext = (BYTE*)Utils::allocateBuffer(encryptedMessageSize);
+        if (ciphertext == NULL)
+        {
+            return NULL;
+        }
 
-    memcpy_s(ciphertext, encryptedMessageSize, message, messageSize);
+        if (message != NULL && messageSize > 0)
+        {
+            memcpy_s(ciphertext, encryptedMessageSize, message, messageSize);
+        }
 
-    ByteSmartPtr result(ciphertext, encryptedMessageSize);
-    return result;
+        ByteSmartPtr result(ciphertext, encryptedMessageSize);
+        return result;
+    }
 }
-
+// ByteSmartPtr Session::prepareEncryptedMessage(unsigned int messageType, const BYTE* message, size_t messageSize)
+// {
+//     // we will do a plain copy for now
+//     size_t encryptedMessageSize = messageSize;
+//     BYTE* ciphertext = (BYTE*)Utils::allocateBuffer(encryptedMessageSize);
+//     if (ciphertext == NULL)
+//     {
+//         return NULL;
+//     }
+//
+//     memcpy_s(ciphertext, encryptedMessageSize, message, messageSize);
+//
+//     ByteSmartPtr result(ciphertext, encryptedMessageSize);
+//     return result;
+// }
 
 bool Session::decryptMessage(MessageHeader* header, BYTE* buffer, size_t* pPlaintextSize)
 {
-    // we will do a plain copy for now
-    size_t ciphertextSize = header->payloadSize;
-    size_t plaintextSize = ciphertextSize;
-    
-
-    if (pPlaintextSize != NULL)
+    // If we have a session key, decrypt the message
+    if (_sessionKey[0] != 0)  // Check if we have a valid session key
     {
-        *pPlaintextSize = plaintextSize;
+        size_t ciphertextSize = header->payloadSize;
+
+        // Create a temporary buffer for the plaintext
+        size_t expectedPlaintextSize = CryptoWrapper::getPlaintextSizeAES_GCM256(ciphertextSize);
+        BYTE* plaintext = (BYTE*)Utils::allocateBuffer(expectedPlaintextSize);
+        if (plaintext == NULL)
+        {
+            return false;
+        }
+
+        // Use message header as additional authenticated data (AAD)
+        // This verifies the integrity of the session ID, message type, and counter
+        MessageHeader aadHeader;
+        aadHeader.sessionId = header->sessionId;
+        aadHeader.messageType = header->messageType;
+        aadHeader.messageCounter = header->messageCounter;
+        aadHeader.payloadSize = 0;  // Will be filled by decryption
+
+        size_t actualPlaintextSize = 0;
+        bool result = CryptoWrapper::decryptAES_GCM256(
+            _sessionKey, SYMMETRIC_KEY_SIZE_BYTES,
+            buffer, ciphertextSize,
+            (const BYTE*)&aadHeader, sizeof(aadHeader),
+            plaintext, expectedPlaintextSize, &actualPlaintextSize);
+
+        if (!result)
+        {
+            printf("Error decrypting message\n");
+            Utils::secureCleanMemory(plaintext, expectedPlaintextSize);
+            Utils::freeBuffer(plaintext);
+            return false;
+        }
+
+        // Copy the decrypted data back to the input buffer
+        memcpy_s(buffer, ciphertextSize, plaintext, actualPlaintextSize);
+
+        // Clean up the temporary buffer
+        Utils::secureCleanMemory(plaintext, expectedPlaintextSize);
+        Utils::freeBuffer(plaintext);
+
+        if (pPlaintextSize != NULL)
+        {
+            *pPlaintextSize = actualPlaintextSize;
+        }
+
+        return true;
     }
+    else
+    {
+        // Fallback to plain copy if no session key is available
+        // (This should not happen in a secure implementation)
+        printf("Warning: receiving unencrypted message - no session key available\n");
+        size_t ciphertextSize = header->payloadSize;
+        size_t plaintextSize = ciphertextSize;
 
-    return true;
+        if (pPlaintextSize != NULL)
+        {
+            *pPlaintextSize = plaintextSize;
+        }
+
+        return true;
+    }
 }
-
+// bool Session::decryptMessage(MessageHeader* header, BYTE* buffer, size_t* pPlaintextSize)
+// {
+//     // we will do a plain copy for now
+//     size_t ciphertextSize = header->payloadSize;
+//     size_t plaintextSize = ciphertextSize;
+//
+//
+//     if (pPlaintextSize != NULL)
+//     {
+//         *pPlaintextSize = plaintextSize;
+//     }
+//
+//     return true;
+// }
+//
 
 bool Session::sendDataMessage(const BYTE* message, size_t messageSize)
 {
