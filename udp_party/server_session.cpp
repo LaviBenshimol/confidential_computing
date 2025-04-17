@@ -114,21 +114,33 @@ Session::ReceiveResult ServerSession::receiveMessage(BYTE* buffer, size_t buffer
         memcpy_s(&(newSession->_remoteAddress), sizeof(struct sockaddr_in), &remoteAddr, remoteAddrSize);
 
         // here we will prepare DH message 2
-        // ...
-        /*
+        // Save client's DH public key from first message
+        BYTE* clientDhKey = buffer + sizeof(MessageHeader);
+        memcpy(newSession->_remoteDhPublicKeyBuffer, clientDhKey, DH_KEY_SIZE_BYTES);
+
+
         ByteSmartPtr message2 = newSession->prepareSigmaMessage(2);
         if (message2 == NULL)
         {
+            printf("Error preparing SIGMA message 2\n");
+            delete newSession;
             return RR_FATAL_ERROR;
         }
-		*/
 
-        if (!newSession->sendMessageInternal(HELLO_BACK_SESSION_MESSAGE, NULL, 0))
+        // Send the prepared message instead of empty payload
+        if (!newSession->sendMessageInternal(HELLO_BACK_SESSION_MESSAGE, message2, message2.size()))
         {
-            printf("Error during receive - error sending response to new session\n");
+            printf("Error sending SIGMA message 2\n");
             newSession->cleanDhData();
+            delete newSession;
             return RR_FATAL_ERROR;
         }
+        // if (!newSession->sendMessageInternal(HELLO_BACK_SESSION_MESSAGE, NULL, 0))
+        // {
+        //     printf("Error during receive - error sending response to new session\n");
+        //     newSession->cleanDhData();
+        //     return RR_FATAL_ERROR;
+        // }
 
         newSession->_state = HELLO_BACK_SESSION_MESSAGE;
 
@@ -220,7 +232,7 @@ Session::ReceiveResult ServerSession::receiveMessage(BYTE* buffer, size_t buffer
                 {
                     BYTE* pPayload = buffer + sizeof(MessageHeader);
                     // here we need to verify SIGMA message 3
-					/*
+
                     if (!pSession->verifySigmaMessage(3, pPayload, (size_t)header->payloadSize))
                     {
                         printf("Session crypto error, closing session %d\n", pSession->_sessionId);
@@ -229,7 +241,7 @@ Session::ReceiveResult ServerSession::receiveMessage(BYTE* buffer, size_t buffer
                         _activeSessions.erase(header->sessionId);
                         return RR_SESSION_CLOSED;
                     }
-					*/
+
 
                     // now we will calculate the session key
                     pSession->deriveSessionKey();
