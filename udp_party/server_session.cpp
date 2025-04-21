@@ -135,12 +135,6 @@ Session::ReceiveResult ServerSession::receiveMessage(BYTE* buffer, size_t buffer
             delete newSession;
             return RR_FATAL_ERROR;
         }
-        // if (!newSession->sendMessageInternal(HELLO_BACK_SESSION_MESSAGE, NULL, 0))
-        // {
-        //     printf("Error during receive - error sending response to new session\n");
-        //     newSession->cleanDhData();
-        //     return RR_FATAL_ERROR;
-        // }
 
         newSession->_state = HELLO_BACK_SESSION_MESSAGE;
 

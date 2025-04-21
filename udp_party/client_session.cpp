@@ -27,14 +27,6 @@ ClientSession::ClientSession(unsigned int remotePort, const char* remoteIpAddres
         cleanDhData();
         return;
     }
-    // Perhaps we can use the first message as Sigma message #1?
-    // BYTE dummy[DH_KEY_SIZE_BYTES];
-    // if (!sendMessageInternal(HELLO_SESSION_MESSAGE, dummy, DH_KEY_SIZE_BYTES))
-    // {
-    //     _state = UNINITIALIZED_SESSION_STATE;
-    //     cleanDhData();
-    //     return;
-    // }
     _state = HELLO_SESSION_MESSAGE;
 
     BYTE messageBuffer[MESSAGE_BUFFER_SIZE_BYTES];
@@ -78,12 +70,6 @@ ClientSession::ClientSession(unsigned int remotePort, const char* remoteIpAddres
         cleanDhData();
         return;
     }
-    // if (!sendMessageInternal(HELLO_DONE_SESSION_MESSAGE, NULL, 0))
-    // {
-    //     _state = UNINITIALIZED_SESSION_STATE;
-    //     cleanDhData();
-    //     return;
-    // }
 
     // now we will calculate the session key
     deriveSessionKey();

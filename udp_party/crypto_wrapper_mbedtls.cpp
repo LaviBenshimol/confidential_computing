@@ -45,34 +45,6 @@ int getRandom(void* contextData, BYTE* output, size_t len)
 }
 
 
-
-
-
-/**
- * @brief Computes the HMAC of a given message using SHA-256 or SHA3-512 (if supported and key is long enough).
- *
- * This function calculates a Hash-based Message Authentication Code (HMAC) over the input message
- * using either SHA-256 (default) or SHA3-512 (optional). The selection is based on the key size:
- * if the key is at least 48 bytes and SHA3-512 is supported by the mbedTLS build, it will be used.
- *
- * It uses the mbedTLS message digest APIs to initialize an HMAC context, bind the key,
- * update with the message data, and finalize the digest into the provided output buffer.
- *
- * @param[in]  key                 Pointer to the HMAC key.
- * @param[in]  keySizeBytes       Size of the key in bytes.
- * @param[in]  message            Pointer to the input message buffer.
- * @param[in]  messageSizeBytes   Size of the input message in bytes.
- * @param[out] macBuffer          Pointer to the buffer where the computed HMAC will be written.
- * @param[in]  macBufferSizeBytes Size of the macBuffer in bytes. Must be at least 32 for SHA-256, or 64 for SHA3-512.
- *
- * @return true on success, false on failure (e.g., null pointers, buffer too small, unsupported hash type).
- *
- * @note The function uses SHA-256 by default. If the key is large (>= 48 bytes) and SHA3-512 is compiled in,
- *       it will switch to SHA3-512 automatically.
- *
- * @warning The caller must ensure that macBuffer is securely allocated and cleared if needed,
- *          especially when handling cryptographic outputs.
- */
 bool CryptoWrapper::hmac_SHA256(IN const BYTE* key, size_t keySizeBytes,
 								 IN const BYTE* message, size_t messageSizeBytes,
 								 OUT BYTE* macBuffer, IN size_t macBufferSizeBytes)
@@ -337,35 +309,6 @@ bool CryptoWrapper::readRSAKeyFromFile(IN const char* keyFilename, IN const char
 
 
 
-// bool CryptoWrapper::signMessageRsa3072Pss(IN const BYTE* message, IN size_t messageSizeBytes, IN KeypairContext* privateKeyContext, OUT BYTE* signatureBuffer, IN size_t signatureBufferSizeBytes)
-// {
-// 	if (signatureBufferSizeBytes != SIGNATURE_SIZE_BYTES)
-// 	{
-// 		printf("Signature buffer size is wrong!\n");
-// 		return false;
-// 	}
-//
-// 	// ...
-// 	return false;
-// }
-/**
- * @brief Signs a message using an RSA private key (any size) with PSS padding and SHA-256.
- *
- * This function computes the SHA-256 hash of the input message, and signs it using the provided
- * RSA private key with RSASSA-PSS padding, as required by modern cryptographic standards.
- * It supports any RSA key size; the signature buffer must be at least as large as the key size in bytes.
- *
- * @param[in]  message                  Pointer to the message to be signed.
- * @param[in]  messageSizeBytes         Size of the message in bytes.
- * @param[in]  privateKeyContext        Pointer to an initialized mbedtls_pk_context containing the RSA private key.
- * @param[out] signatureBuffer          Pointer to the buffer where the resulting signature will be stored.
- * @param[in]  signatureBufferSizeBytes Size of the signature buffer in bytes (must be >= key size).
- *
- * @return true on successful signature generation, false on error.
- *
- * @note This function uses SHA-256 as the message digest and applies RSASSA-PSS padding.
- *       The caller is responsible for zeroizing the signature buffer after use.
- */
 bool CryptoWrapper::signMessageRsa3072Pss(IN const BYTE* message, IN size_t messageSizeBytes,
 										  IN KeypairContext* privateKeyContext,
 										  OUT BYTE* signatureBuffer, IN size_t signatureBufferSizeBytes)
@@ -420,34 +363,6 @@ bool CryptoWrapper::signMessageRsa3072Pss(IN const BYTE* message, IN size_t mess
 }
 
 
-// bool CryptoWrapper::verifyMessageRsa3072Pss(IN const BYTE* message, IN size_t messageSizeBytes, IN KeypairContext* publicKeyContext, IN const BYTE* signature, IN size_t signatureSizeBytes, OUT bool* result)
-// {
-// 	if (signatureSizeBytes != SIGNATURE_SIZE_BYTES)
-// 	{
-// 		printf("Signature size is wrong!\n");
-// 		return false;
-// 	}
-//
-// 	// ...
-// 	return false;
-// }
-/**
- * @brief Verifies a message signature using an RSA public key (any size) with PSS padding and SHA-256.
- *
- * This function computes the SHA-256 hash of the message and verifies the provided signature
- * using the given RSA public key and RSASSA-PSS padding scheme. Supports any RSA key size.
- *
- * @param[in]  message                Pointer to the message whose signature is to be verified.
- * @param[in]  messageSizeBytes       Size of the message in bytes.
- * @param[in]  publicKeyContext       Pointer to an initialized mbedtls_pk_context containing the RSA public key.
- * @param[in]  signature              Pointer to the signature to be verified.
- * @param[in]  signatureSizeBytes     Size of the signature buffer in bytes.
- * @param[out] result                 Pointer to boolean; set to true if signature is valid, false otherwise.
- *
- * @return true if verification was performed (regardless of outcome), false if an internal error occurred.
- *
- * @note This function uses SHA-256 as the message digest and assumes PSS padding.
- */
 bool CryptoWrapper::verifyMessageRsa3072Pss(IN const BYTE* message, IN size_t messageSizeBytes,
                                             IN KeypairContext* publicKeyContext,
                                             IN const BYTE* signature, IN size_t signatureSizeBytes,
@@ -519,13 +434,11 @@ bool CryptoWrapper::loadPublicKeyFromPemBuffer(INOUT KeypairContext* context, IN
 
 bool CryptoWrapper::startDh(DhContext** pDhContext, BYTE* publicKeyBuffer, size_t publicKeyBufferSizeBytes)
 {
-    //printf("[DEBUG] startDh() function entered\n");
 
     // Allocate DH context
     DhContext* dhContext = (DhContext*)Utils::allocateBuffer(sizeof(DhContext));
     if (dhContext == NULL)
     {
-        //printf("[startDh] Memory allocation failed\n");
         return false;
     }
 
@@ -542,7 +455,6 @@ bool CryptoWrapper::startDh(DhContext** pDhContext, BYTE* publicKeyBuffer, size_
     if (mbedtls_mpi_read_binary(&P, dhm_P, sizeof(dhm_P)) != 0 ||
         mbedtls_mpi_read_binary(&G, dhm_G, sizeof(dhm_G)) != 0)
     {
-        //printf("[startDh] Error reading P or G\n");
         mbedtls_mpi_free(&P);
         mbedtls_mpi_free(&G);
         cleanDhContext(&dhContext);
@@ -551,7 +463,6 @@ bool CryptoWrapper::startDh(DhContext** pDhContext, BYTE* publicKeyBuffer, size_
 
     if (mbedtls_dhm_set_group(dhContext, &P, &G) != 0)
     {
-        //printf("[startDh] Failed to set P/G group\n");
         mbedtls_mpi_free(&P);
         mbedtls_mpi_free(&G);
         cleanDhContext(&dhContext);
@@ -565,7 +476,6 @@ bool CryptoWrapper::startDh(DhContext** pDhContext, BYTE* publicKeyBuffer, size_
     size_t pubKeyLen = mbedtls_dhm_get_len(dhContext);
     if (publicKeyBufferSizeBytes < pubKeyLen)
     {
-        //printf("[startDh] Buffer too small! Required: %zu, Provided: %zu\n", pubKeyLen, publicKeyBufferSizeBytes);
         cleanDhContext(&dhContext);
         return false;
     }
@@ -574,13 +484,10 @@ bool CryptoWrapper::startDh(DhContext** pDhContext, BYTE* publicKeyBuffer, size_
                                 publicKeyBuffer, publicKeyBufferSizeBytes,
                                 getRandom, NULL) != 0)
     {
-        //printf("[startDh] Failed to make public key\n");
         cleanDhContext(&dhContext);
         return false;
     }
 
-    //printf("[startDh] Public key generated. First 4 bytes: %02x %02x %02x %02x\n",
-        //publicKeyBuffer[0], publicKeyBuffer[1], publicKeyBuffer[2], publicKeyBuffer[3]);
 
     *pDhContext = dhContext;
     return true;
@@ -596,22 +503,17 @@ bool CryptoWrapper::getDhSharedSecret(INOUT DhContext* dhContext,
 {
 	if (dhContext == NULL || peerPublicKey == NULL || sharedSecretBuffer == NULL)
 	{
-		//printf("[getDhSharedSecret] Invalid input parameters!\n");
 		return false;
 	}
 
-	//printf("[getDhSharedSecret] Reading peer's public key (size: %zu)...\n", peerPublicKeySizeBytes);
 	if (mbedtls_dhm_read_public(dhContext, peerPublicKey, peerPublicKeySizeBytes) != 0)
 	{
-		//printf("[getDhSharedSecret] Failed to read peer's public key\n");
 		return false;
 	}
 
 	size_t expectedSize = mbedtls_dhm_get_len(dhContext);
 	if (sharedSecretBufferSizeBytes < expectedSize)
 	{
-		//printf("[getDhSharedSecret] Shared secret buffer is too small! Required: %zu, Provided: %zu\n",
-			   //expectedSize, sharedSecretBufferSizeBytes);
 		return false;
 	}
 
@@ -619,11 +521,9 @@ bool CryptoWrapper::getDhSharedSecret(INOUT DhContext* dhContext,
 	int ret = mbedtls_dhm_calc_secret(dhContext, sharedSecretBuffer, sharedSecretBufferSizeBytes, &actualSize, getRandom, NULL);
 	if (ret != 0)
 	{
-		//printf("[getDhSharedSecret] Failed to compute shared secret (mbedtls_dhm_calc_secret returned %d)\n", ret);
 		return false;
 	}
 
-	//printf("[getDhSharedSecret] Shared secret computed successfully (size: %zu)\n", actualSize);
 	return true;
 }
 
@@ -702,36 +602,6 @@ bool CryptoWrapper::checkCertificate(IN const BYTE* cACcertBuffer, IN size_t cAC
 	mbedtls_x509_crt_free(&clicert);
 	return false;
 }
-
-// bool CryptoWrapper::checkCertificate(IN const BYTE* cACcertBuffer, IN size_t cACertSizeBytes, IN const BYTE* certBuffer, IN size_t certSizeBytes, IN const char* expectedCN)
-// {
-// 	mbedtls_x509_crt cacert;
-// 	mbedtls_x509_crt clicert;
-// 	mbedtls_x509_crt_init(&cacert);
-// 	mbedtls_x509_crt_init(&clicert);
-// 	uint32_t flags;
-// 	int res = -1;
-//
-// 	if (mbedtls_x509_crt_parse(&cacert, cACcertBuffer, cACertSizeBytes) != 0)
-// 	{
-// 		printf("Error parsing CA certificate\n");
-// 		return false;
-// 	}
-//
-// 	if (mbedtls_x509_crt_parse(&clicert, certBuffer, certSizeBytes) != 0)
-// 	{
-// 		printf("Error parsing certificate to verify\n");
-// 		mbedtls_x509_crt_free(&cacert);
-// 		return false;
-// 	}
-//
-// 	// ...
-//
-// 	mbedtls_x509_crt_free(&cacert);
-// 	mbedtls_x509_crt_free(&clicert);
-// 	return (res == 0);
-// }
-
 
 bool CryptoWrapper::getPublicKeyFromCertificate(IN const BYTE* certBuffer, IN size_t certSizeBytes, OUT KeypairContext** pPublicKeyContext)
 {
