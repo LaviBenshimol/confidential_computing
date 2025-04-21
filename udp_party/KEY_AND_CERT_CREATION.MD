@@ -19,42 +19,58 @@ openssl genrsa -out rootCA.key 3072
 
 ```bash
 openssl req -x509 -new -sha384 -nodes -key rootCA.key -days 1024 -out rootCA.crt -set_serial 01 \
--subj "/C=AU/ST=US/O=CBG/CN=rootCA"
+  -subj "/C=AU/ST=US/O=CBG/CN=rootCA"
 ```
 
 ## Step 2: Create Alice's Private Key and Certificate Signing Request (CSR)
 
-1. Generate RSA private key for Alice (3072 bits)
+- Generate RSA private key for Alice (3072 bits)
 ```bash
-openssl req -new -sha384 -key alice.key -out alice.csr -passin pass:alicekey \
-  -subj "/C=AU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=Alice.com" 
+openssl genrsa -out alice_unencrypted.key 3072
+```
+- Encrypt with the password alice:
+
+```bash
+openssl rsa -in alice_unencrypted.key -out alice.key -aes256 -passout pass:alice
 ```
 
-2. Sign
-
+- Create Alice's CSR
 ```bash
-openssl x509 -req -in alice.csr -CA rootCA.crt -CAkey rootCA.key -CAcreateserial \
+openssl req -new -sha384 -key alice.key -out alice.csr -passin pass:alice \
+  -subj "/C=AU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=Alice.com"
+```
+
+- Sign
+```bash
+ openssl x509 -req -in alice.csr -CA rootCA.crt -CAkey rootCA.key -CAcreateserial \
   -out alice.crt -days 365 -sha384 -set_serial 02
 ```
 
+
 ## Step 3: Create Bob's Private Key and Certificate Signing Request (CSR)
 
-1. Create Certificate Signing Request (CSR) for Bob
+- Create private key
 
+```bash
+openssl genrsa -out bob_unencrypted.key 3072
+```
+
+- Encrypt Bob's key with password "bobkey"
+
+
+```bash
+openssl rsa -in bob_unencrypted.key -out bob.key -aes256 -passout pass:bobkey
+```
+
+- Create Bob's CSR with the correct CN of "Bob.com"
 ```bash
 openssl req -new -sha384 -key bob.key -out bob.csr -passin pass:bobkey \
-  -subj "/C=AU/ST=Some-State/O=CBG/CN=Boby.com"
+-subj "/C=AU/ST=Some-State/O=CBG/CN=Bob.com"
 ```
 
-2. Sign 
+- Sign
 
 ```bash
-openssl x509 -req -in bob.csr -CA rootCA.crt -CAkey rootCA.key -CAcreateserial -out alice.crt -days 365 -sha384 -set_serial 03 
+openssl x509 -req -in bob.csr -CA rootCA.crt -CAkey rootCA.key -CAcreateserial \
+  -out bob.crt -days 365 -sha384 -set_serial 03
 ```
-
-
-
-#####################
-
-
-udp_party -port 60000 -key alice.key -pwd alice -cert alice.crt -root rootCA.crt -peer bob
