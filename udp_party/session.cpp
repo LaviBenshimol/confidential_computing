@@ -166,46 +166,110 @@ void Session::cleanDhData()
     Utils::secureCleanMemory(_sharedDhSecretBuffer, DH_KEY_SIZE_BYTES);
 }
 
-
+/**
+ * @brief Derives a MAC key from the shared Diffie-Hellman secret
+ *
+ * This function derives a MAC key for SIGMA protocol message authentication.
+ * It uses HKDF (HMAC-based Key Derivation Function) with:
+ * - The shared DH secret as the input key material
+ * - A fixed salt (all zeros)
+ * - A context string that includes the session ID
+ *
+ * It's critical that both sides use the same parameters to derive the same key.
+ *
+ * @param macKeyBuffer Output buffer where the derived MAC key will be stored
+ */
 void Session::deriveMacKey(BYTE* macKeyBuffer)
 {
+    // Create a deterministic context string that includes the session ID
     char keyDerivationContext[MAX_CONTEXT_SIZE];
-    if (sprintf_s(keyDerivationContext, MAX_CONTEXT_SIZE, "MAC over certificate key %d", _sessionId) <= 0)
+    if (sprintf_s(keyDerivationContext, MAX_CONTEXT_SIZE, "SIGMA-MAC-%d", _sessionId) <= 0)
     {
+        printf("SIGMA: Error creating key derivation context\n");
         exit(0);
     }
 
-    // Use a fixed salt (or derive it deterministically from shared data)
-    // For example, use the first HMAC_SIZE_BYTES from the shared DH secret
-    BYTE salt[HMAC_SIZE_BYTES];
-    memcpy(salt, _sharedDhSecretBuffer, HMAC_SIZE_BYTES);
+    // Use a fixed salt of all zeros
+    // This ensures both sides derive the same key
+    BYTE salt[HMAC_SIZE_BYTES] = {0};
 
-    // Derive the MAC key using HKDF with the DH shared secret
+    printf("SIGMA: MAC key derivation parameters:\n");
+    printf("- Context: %s\n", keyDerivationContext);
+    printf("- Shared secret (first 8 bytes): ");
+    for (int i = 0; i < 8 && i < DH_KEY_SIZE_BYTES; i++) {
+        printf("%02x", _sharedDhSecretBuffer[i]);
+    }
+    printf("\n");
+
+    // Derive the MAC key using HKDF with the shared DH secret
     if (!CryptoWrapper::deriveKey_HKDF_SHA256(
-            salt, HMAC_SIZE_BYTES,
-            _sharedDhSecretBuffer, DH_KEY_SIZE_BYTES,
-            (const BYTE*)keyDerivationContext, strnlen_s(keyDerivationContext, MAX_CONTEXT_SIZE),
-            macKeyBuffer, HMAC_SIZE_BYTES))
+            salt, HMAC_SIZE_BYTES,  // Fixed salt (all zeros)
+            _sharedDhSecretBuffer, DH_KEY_SIZE_BYTES,  // Input key material (shared DH secret)
+            (const BYTE*)keyDerivationContext, strnlen_s(keyDerivationContext, MAX_CONTEXT_SIZE),  // Context
+            macKeyBuffer, HMAC_SIZE_BYTES))  // Output key
     {
-        printf("Error during MAC key derivation\n");
+        printf("SIGMA: Error during MAC key derivation\n");
         exit(0);
     }
+
+    printf("SIGMA: Derived MAC key (first 8 bytes): ");
+    for (int i = 0; i < 8 && i < HMAC_SIZE_BYTES; i++) {
+        printf("%02x", macKeyBuffer[i]);
+    }
+    printf("\n");
 }
+// void Session::deriveMacKey(BYTE* macKeyBuffer)
+// {
+//     char keyDerivationContext[MAX_CONTEXT_SIZE];
+//     if (sprintf_s(keyDerivationContext, MAX_CONTEXT_SIZE, "MAC over certificate key %d", _sessionId) <= 0)
+//     {
+//         exit(0);
+//     }
+//
+//     // Use a fixed salt (or derive it deterministically from shared data)
+//     // For example, use the first HMAC_SIZE_BYTES from the shared DH secret
+//     BYTE salt[HMAC_SIZE_BYTES];
+//     memcpy(salt, _sharedDhSecretBuffer, HMAC_SIZE_BYTES);
+//
+//     // Derive the MAC key using HKDF with the DH shared secret
+//     if (!CryptoWrapper::deriveKey_HKDF_SHA256(
+//             salt, HMAC_SIZE_BYTES,
+//             _sharedDhSecretBuffer, DH_KEY_SIZE_BYTES,
+//             (const BYTE*)keyDerivationContext, strnlen_s(keyDerivationContext, MAX_CONTEXT_SIZE),
+//             macKeyBuffer, HMAC_SIZE_BYTES))
+//     {
+//         printf("Error during MAC key derivation\n");
+//         exit(0);
+//     }
+// }
+
+/**
+ * @brief Derives the session encryption key from the shared Diffie-Hellman secret
+ *
+ * This function derives the main session key used for encrypting data messages.
+ * Similar to deriveMacKey(), it uses HKDF but with a different context string.
+ * The derived key will be stored in the _sessionKey member variable.
+ */
 void Session::deriveSessionKey()
 {
+    // Create a deterministic context string that includes the session ID
     char keyDerivationContext[MAX_CONTEXT_SIZE];
-    if (sprintf_s(keyDerivationContext, MAX_CONTEXT_SIZE, "ENC session key %d", _sessionId) <= 0)
+    if (sprintf_s(keyDerivationContext, MAX_CONTEXT_SIZE, "SIGMA-ENC-%d", _sessionId) <= 0)
     {
+        printf("SIGMA: Error creating session key derivation context\n");
         exit(0);
     }
-    
-    // Generate random salt for HKDF
-    BYTE salt[HMAC_SIZE_BYTES];
-    if (!Utils::generateRandom(salt, HMAC_SIZE_BYTES))
-    {
-        printf("Error generating random salt for session key derivation\n");
-        exit(0);
+
+    // Use a fixed salt of all zeros
+    BYTE salt[HMAC_SIZE_BYTES] = {0};
+
+    printf("SIGMA: Session key derivation parameters:\n");
+    printf("- Context: %s\n", keyDerivationContext);
+    printf("- Shared secret (first 8 bytes): ");
+    for (int i = 0; i < 8 && i < DH_KEY_SIZE_BYTES; i++) {
+        printf("%02x", _sharedDhSecretBuffer[i]);
     }
+    printf("\n");
 
     // Derive the session key using HKDF with the DH shared secret
     if (!CryptoWrapper::deriveKey_HKDF_SHA256(
@@ -214,76 +278,142 @@ void Session::deriveSessionKey()
             (const BYTE*)keyDerivationContext, strnlen_s(keyDerivationContext, MAX_CONTEXT_SIZE),
             _sessionKey, SYMMETRIC_KEY_SIZE_BYTES))
     {
-        printf("Error during session key derivation\n");
+        printf("SIGMA: Error during session key derivation\n");
         exit(0);
     }
+
+    printf("SIGMA: Derived session key (first 8 bytes): ");
+    for (int i = 0; i < 8 && i < SYMMETRIC_KEY_SIZE_BYTES; i++) {
+        printf("%02x", _sessionKey[i]);
+    }
+    printf("\n");
+
+    printf("SIGMA: Session key derivation complete\n");
 }
-
-
+// void Session::deriveSessionKey()
+// {
+//     char keyDerivationContext[MAX_CONTEXT_SIZE];
+//     if (sprintf_s(keyDerivationContext, MAX_CONTEXT_SIZE, "ENC session key %d", _sessionId) <= 0)
+//     {
+//         exit(0);
+//     }
+//
+//     // Generate random salt for HKDF
+//     BYTE salt[HMAC_SIZE_BYTES];
+//     if (!Utils::generateRandom(salt, HMAC_SIZE_BYTES))
+//     {
+//         printf("Error generating random salt for session key derivation\n");
+//         exit(0);
+//     }
+//
+//     // Derive the session key using HKDF with the DH shared secret
+//     if (!CryptoWrapper::deriveKey_HKDF_SHA256(
+//             salt, HMAC_SIZE_BYTES,
+//             _sharedDhSecretBuffer, DH_KEY_SIZE_BYTES,
+//             (const BYTE*)keyDerivationContext, strnlen_s(keyDerivationContext, MAX_CONTEXT_SIZE),
+//             _sessionKey, SYMMETRIC_KEY_SIZE_BYTES))
+//     {
+//         printf("Error during session key derivation\n");
+//         exit(0);
+//     }
+// }
+/**
+ * @brief Prepares a SIGMA protocol message (message 2 or 3)
+ *
+ * The SIGMA protocol provides authenticated key exchange with identity protection.
+ * This function prepares either message 2 (server) or message 3 (client) of the protocol.
+ *
+ * The SIGMA protocol message structure:
+ * 1. My Diffie-Hellman public key
+ * 2. My X.509 certificate (contains my public signing key)
+ * 3. Signature over concatenated DH public keys (signed with my private key)
+ * 4. MAC over my certificate (using key derived from the shared DH secret)
+ *
+ * Message 2 is sent by the server in response to client's initial DH key.
+ * Message 3 is sent by the client to complete the protocol.
+ *
+ * @param messageType Either 2 (server message) or 3 (client message)
+ * @return ByteSmartPtr Packed message containing all protocol parts, or NULL on failure
+ */
 ByteSmartPtr Session::prepareSigmaMessage(unsigned int messageType)
 {
+    // SIGMA protocol only defines messages 2 and 3
     if (messageType != 2 && messageType != 3)
     {
-        return 0;
+        printf("prepareSigmaMessage: Invalid message type %d\n", messageType);
+        return NULL;
     }
 
-    // For message 2 (server), initialize DH and get our public key
+    printf("SIGMA: Preparing message %d\n", messageType);
+
+    // ------ STEP 1: Initialize DH for message 2 (server only) ------
+    // For message 2 (server), we need to initialize our DH context and generate our public key
+    // For message 3 (client), we already have our DH key from the initial hello message
     if (messageType == 2)
     {
+        printf("SIGMA: Server generating DH key pair\n");
         // Initialize DH and get our public key
         if (!CryptoWrapper::startDh(&_dhContext, _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES))
         {
-            printf("prepareSigmaMessage - Failed to initialize DH key exchange\n");
+            printf("SIGMA: Failed to initialize DH key exchange\n");
             return NULL;
         }
     }
 
-    // Get my certificate
+    // ------ STEP 2: Get my certificate for inclusion in the message ------
+    printf("SIGMA: Reading local certificate: %s\n", _localCertFilename);
     ByteSmartPtr certBufferSmartPtr = Utils::readBufferFromFile(_localCertFilename);
     if (certBufferSmartPtr == NULL)
     {
-        printf("prepareSigmaMessage - Error reading certificate filename - %s\n", _localCertFilename);
+        printf("SIGMA: Error reading certificate file: %s\n", _localCertFilename);
         return NULL;
     }
 
-    // Get my private key for signing
+    // ------ STEP 3: Load my private signing key ------
+    printf("SIGMA: Reading private key: %s\n", _privateKeyFilename);
     KeypairContext* privateKeyContext = NULL;
     if (!CryptoWrapper::readRSAKeyFromFile(_privateKeyFilename, _privateKeyPassword, &privateKeyContext))
     {
-        printf("prepareSigmaMessage #%d - Error during readRSAKeyFromFile - %s\n", messageType, _privateKeyFilename);
-        cleanDhData();
+        printf("SIGMA: Error loading private key: %s\n", _privateKeyFilename);
         return NULL;
     }
 
-    // Concatenate public keys in proper order based on message type
-    ByteSmartPtr concatenatedPublicKeysSmartPtr(NULL);
+    // ------ STEP 4: Concatenate public keys in the correct order for signing ------
+    // SIGMA protocol requires signing the concatenation of both public keys
+    // The order is based on message type to ensure consistency when verifying
+    ByteSmartPtr concatenatedPublicKeysSmartPtr = NULL;
     if (messageType == 2)
     {
         // Server: order is client DH key | server DH key
-        concatenatedPublicKeysSmartPtr = concat(2, _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
-                                              _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES);
+        printf("SIGMA: Concatenating keys in order: client|server for signature\n");
+        concatenatedPublicKeysSmartPtr = concat(2,
+                                               _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+                                               _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES);
     }
     else // messageType == 3
     {
-        // Client: order is client DH key | server DH key
-        concatenatedPublicKeysSmartPtr = concat(2, _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
-                                              _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES);
+        // Client: order is client DH key | server DH key (same order)
+        printf("SIGMA: Concatenating keys in order: client|server for signature\n");
+        concatenatedPublicKeysSmartPtr = concat(2,
+                                               _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+                                               _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES);
     }
 
     if (concatenatedPublicKeysSmartPtr == NULL)
     {
-        printf("prepareSigmaMessage #%d failed - Error concatenating public keys\n", messageType);
+        printf("SIGMA: Failed to concatenate DH public keys\n");
         CryptoWrapper::cleanKeyContext(&privateKeyContext);
         return NULL;
     }
 
-    // Sign the concatenated public keys with our private key
+    // ------ STEP 5: Sign the concatenated public keys with my private key ------
+    printf("SIGMA: Signing concatenated DH public keys\n");
     BYTE signature[SIGNATURE_SIZE_BYTES];
     if (!CryptoWrapper::signMessageRsa3072Pss(
             concatenatedPublicKeysSmartPtr, concatenatedPublicKeysSmartPtr.size(),
             privateKeyContext, signature, SIGNATURE_SIZE_BYTES))
     {
-        printf("prepareSigmaMessage #%d failed - Error signing concatenated public keys\n", messageType);
+        printf("SIGMA: Failed to create signature\n");
         CryptoWrapper::cleanKeyContext(&privateKeyContext);
         return NULL;
     }
@@ -291,28 +421,38 @@ ByteSmartPtr Session::prepareSigmaMessage(unsigned int messageType)
     // Clean up the private key context - we don't need it anymore
     CryptoWrapper::cleanKeyContext(&privateKeyContext);
 
-    // For message 2 (server), calculate shared secret
+    // ------ STEP 6: For message 2 (server), calculate the shared DH secret ------
     if (messageType == 2)
     {
+        printf("SIGMA: Server calculating shared DH secret\n");
         // Calculate shared secret based on received client public key
         if (!CryptoWrapper::getDhSharedSecret(_dhContext, _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
                                              _sharedDhSecretBuffer, DH_KEY_SIZE_BYTES))
         {
-            printf("prepareSigmaMessage #%d failed - Error calculating shared secret\n", messageType);
+            printf("SIGMA: Failed to calculate shared DH secret\n");
             return NULL;
         }
+
+        printf("SIGMA: Server shared secret (first 8 bytes): ");
+        for (int i = 0; i < 8 && i < DH_KEY_SIZE_BYTES; i++) {
+            printf("%02x", _sharedDhSecretBuffer[i]);
+        }
+        printf("\n");
     }
 
-    // Now calculate the MAC over my certificate
+    // ------ STEP 7: Derive the MAC key from the shared secret ------
+    printf("SIGMA: Deriving MAC key from shared secret\n");
     BYTE macKey[HMAC_SIZE_BYTES];
     deriveMacKey(macKey);
 
+    // ------ STEP 8: Calculate the MAC over my certificate ------
+    printf("SIGMA: Calculating MAC over certificate\n");
     BYTE calculatedMac[HMAC_SIZE_BYTES];
     if (!CryptoWrapper::hmac_SHA256(macKey, HMAC_SIZE_BYTES,
                                    certBufferSmartPtr, certBufferSmartPtr.size(),
                                    calculatedMac, HMAC_SIZE_BYTES))
     {
-        printf("prepareSigmaMessage #%d failed - Error calculating MAC\n", messageType);
+        printf("SIGMA: Failed to calculate MAC\n");
         Utils::secureCleanMemory(macKey, HMAC_SIZE_BYTES);
         return NULL;
     }
@@ -320,15 +460,132 @@ ByteSmartPtr Session::prepareSigmaMessage(unsigned int messageType)
     // Securely clean the MAC key as we don't need it anymore
     Utils::secureCleanMemory(macKey, HMAC_SIZE_BYTES);
 
-    // Pack all of the parts together
+    // ------ STEP 9: Pack all the message parts together ------
+    printf("SIGMA: Packing the complete message\n");
     ByteSmartPtr messageToSend = packMessageParts(4,
-                                               _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
-                                               (BYTE*)certBufferSmartPtr, certBufferSmartPtr.size(),
-                                               signature, SIGNATURE_SIZE_BYTES,
-                                               calculatedMac, HMAC_SIZE_BYTES);
+                                               _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,   // Part 1: My DH public key
+                                               (BYTE*)certBufferSmartPtr, certBufferSmartPtr.size(), // Part 2: My certificate
+                                               signature, SIGNATURE_SIZE_BYTES,              // Part 3: Signature over both keys
+                                               calculatedMac, HMAC_SIZE_BYTES);              // Part 4: MAC over my certificate
 
+    printf("SIGMA: Message %d preparation complete\n", messageType);
     return messageToSend;
 }
+
+
+// ByteSmartPtr Session::prepareSigmaMessage(unsigned int messageType)
+// {
+//     if (messageType != 2 && messageType != 3)
+//     {
+//         return 0;
+//     }
+//
+//     // For message 2 (server), initialize DH and get our public key
+//     if (messageType == 2)
+//     {
+//         // Initialize DH and get our public key
+//         if (!CryptoWrapper::startDh(&_dhContext, _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES))
+//         {
+//             printf("prepareSigmaMessage - Failed to initialize DH key exchange\n");
+//             return NULL;
+//         }
+//     }
+//
+//     // Get my certificate
+//     ByteSmartPtr certBufferSmartPtr = Utils::readBufferFromFile(_localCertFilename);
+//     if (certBufferSmartPtr == NULL)
+//     {
+//         printf("prepareSigmaMessage - Error reading certificate filename - %s\n", _localCertFilename);
+//         return NULL;
+//     }
+//
+//     // Get my private key for signing
+//     KeypairContext* privateKeyContext = NULL;
+//     if (!CryptoWrapper::readRSAKeyFromFile(_privateKeyFilename, _privateKeyPassword, &privateKeyContext))
+//     {
+//         printf("prepareSigmaMessage #%d - Error during readRSAKeyFromFile - %s\n", messageType, _privateKeyFilename);
+//         cleanDhData();
+//         return NULL;
+//     }
+//
+//     // Concatenate public keys in proper order based on message type
+//     ByteSmartPtr concatenatedPublicKeysSmartPtr(NULL);
+//     if (messageType == 2)
+//     {
+//         // Server: order is client DH key | server DH key
+//         concatenatedPublicKeysSmartPtr = concat(2, _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+//                                               _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES);
+//     }
+//     else // messageType == 3
+//     {
+//         // Client: order is client DH key | server DH key
+//         concatenatedPublicKeysSmartPtr = concat(2, _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+//                                               _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES);
+//     }
+//
+//     if (concatenatedPublicKeysSmartPtr == NULL)
+//     {
+//         printf("prepareSigmaMessage #%d failed - Error concatenating public keys\n", messageType);
+//         CryptoWrapper::cleanKeyContext(&privateKeyContext);
+//         return NULL;
+//     }
+//
+//     // Sign the concatenated public keys with our private key
+//     BYTE signature[SIGNATURE_SIZE_BYTES];
+//     if (!CryptoWrapper::signMessageRsa3072Pss(
+//             concatenatedPublicKeysSmartPtr, concatenatedPublicKeysSmartPtr.size(),
+//             privateKeyContext, signature, SIGNATURE_SIZE_BYTES))
+//     {
+//         printf("prepareSigmaMessage #%d failed - Error signing concatenated public keys\n", messageType);
+//         CryptoWrapper::cleanKeyContext(&privateKeyContext);
+//         return NULL;
+//     }
+//
+//     // Clean up the private key context - we don't need it anymore
+//     CryptoWrapper::cleanKeyContext(&privateKeyContext);
+//
+//     // For message 2 (server), calculate shared secret
+//     if (messageType == 2)
+//     {
+//         // Calculate shared secret based on received client public key
+//         if (!CryptoWrapper::getDhSharedSecret(_dhContext, _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+//                                              _sharedDhSecretBuffer, DH_KEY_SIZE_BYTES))
+//         {
+//             printf("prepareSigmaMessage #%d failed - Error calculating shared secret\n", messageType);
+//             return NULL;
+//         }
+//     }
+//
+//     // Now calculate the MAC over my certificate
+//     BYTE macKey[HMAC_SIZE_BYTES];
+//     deriveMacKey(macKey);
+//
+//     BYTE calculatedMac[HMAC_SIZE_BYTES];
+//     if (!CryptoWrapper::hmac_SHA256(macKey, HMAC_SIZE_BYTES,
+//                                    certBufferSmartPtr, certBufferSmartPtr.size(),
+//                                    calculatedMac, HMAC_SIZE_BYTES))
+//     {
+//         printf("prepareSigmaMessage #%d failed - Error calculating MAC\n", messageType);
+//         Utils::secureCleanMemory(macKey, HMAC_SIZE_BYTES);
+//         return NULL;
+//     }
+//
+//     // Securely clean the MAC key as we don't need it anymore
+//     Utils::secureCleanMemory(macKey, HMAC_SIZE_BYTES);
+//
+//     // Pack all of the parts together
+//     ByteSmartPtr messageToSend = packMessageParts(4,
+//                                                _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+//                                                (BYTE*)certBufferSmartPtr, certBufferSmartPtr.size(),
+//                                                signature, SIGNATURE_SIZE_BYTES,
+//                                                calculatedMac, HMAC_SIZE_BYTES);
+//
+//     return messageToSend;
+// }
+
+
+
+// //////////////////////////////////////////////////
 // ByteSmartPtr Session::prepareSigmaMessage(unsigned int messageType)
 // {
 //     if (messageType != 2 && messageType != 3)
@@ -378,172 +635,473 @@ ByteSmartPtr Session::prepareSigmaMessage(unsigned int messageType)
 //     Utils::secureCleanMemory(calculatedMac, HMAC_SIZE_BYTES);
 //     return messageToSend;
 // }
-
+/**
+ * @brief Verifies a received SIGMA protocol message (message 2 or 3)
+ *
+ * This function verifies either message 2 (from server) or message 3 (from client)
+ * of the SIGMA protocol. The verification includes:
+ * 1. Unpacking and validating all message parts
+ * 2. Verifying the peer's certificate against the root CA
+ * 3. Verifying the signature using the peer's public key
+ * 4. For message 3, calculating the shared DH secret
+ * 5. Verifying the MAC over the peer's certificate
+ *
+ * @param messageType Either 2 (server message) or 3 (client message)
+ * @param pPayload Pointer to the received message payload
+ * @param payloadSize Size of the payload in bytes
+ * @return true if verification succeeded, false otherwise
+ */
 bool Session::verifySigmaMessage(unsigned int messageType, const BYTE* pPayload, size_t payloadSize)
 {
+    // SIGMA protocol only defines messages 2 and 3
     if (messageType != 2 && messageType != 3)
     {
+        printf("SIGMA: Invalid message type %d for verification\n", messageType);
         return false;
     }
 
-    const unsigned int expectedNumberOfParts = 4;
+    printf("SIGMA: Verifying message %d\n", messageType);
 
-    // Unpack the received message parts
+    // ------ STEP 1: Unpack the received message parts ------
+    const unsigned int expectedNumberOfParts = 4;
     std::vector<MessagePart> parts;
+
     if (!unpackMessageParts(pPayload, payloadSize, parts) || parts.size() != expectedNumberOfParts)
     {
-        printf("verifySigmaMessage #%d failed - number of message parts is wrong\n", messageType);
+        printf("SIGMA: Wrong number of message parts - expected %d, got %zu\n",
+               expectedNumberOfParts, parts.size());
         return false;
     }
 
-    // Extract and validate parts
-    // 1. Remote DH public key
+    printf("SIGMA: Message unpacked successfully\n");
+
+    // ------ STEP 2: Validate and extract the remote DH public key ------
     if (parts[0].partSize != DH_KEY_SIZE_BYTES)
     {
-        printf("verifySigmaMessage #%d failed - DH key size is wrong\n", messageType);
+        printf("SIGMA: DH key size is wrong - expected %zu, got %zu\n",
+               (size_t)DH_KEY_SIZE_BYTES, parts[0].partSize);
         return false;
     }
 
     // Store remote DH public key
     memcpy(_remoteDhPublicKeyBuffer, parts[0].part, DH_KEY_SIZE_BYTES);
+    printf("SIGMA: Remote DH public key extracted\n");
 
-    // 2. Remote certificate
+    // ------ STEP 3: Copy the remote certificate ------
     ByteSmartPtr remoteCertBuffer((BYTE*)Utils::allocateBuffer(parts[1].partSize), parts[1].partSize);
     if (remoteCertBuffer == NULL)
     {
-        printf("verifySigmaMessage #%d failed - Error allocating memory for remote certificate\n", messageType);
+        printf("SIGMA: Failed to allocate memory for remote certificate\n");
         return false;
     }
     memcpy(remoteCertBuffer, parts[1].part, parts[1].partSize);
+    printf("SIGMA: Remote certificate extracted\n");
 
-    // 3. Validate signature size
+    // ------ STEP 4: Validate signature and MAC sizes ------
     if (parts[2].partSize != SIGNATURE_SIZE_BYTES)
     {
-        printf("verifySigmaMessage #%d failed - Signature size is wrong\n", messageType);
+        printf("SIGMA: Signature size is wrong - expected %zu, got %zu\n",
+               (size_t)SIGNATURE_SIZE_BYTES, parts[2].partSize);
         return false;
     }
 
-    // 4. Validate MAC size
     if (parts[3].partSize != HMAC_SIZE_BYTES)
     {
-        printf("verifySigmaMessage #%d failed - MAC size is wrong\n", messageType);
+        printf("SIGMA: MAC size is wrong - expected %zu, got %zu\n",
+               (size_t)HMAC_SIZE_BYTES, parts[3].partSize);
         return false;
     }
 
-    // Read the root CA certificate to verify the remote certificate
+    // ------ STEP 5: Verify the remote certificate against the root CA ------
+    printf("SIGMA: Reading root CA certificate: %s\n", _rootCaCertFilename);
     ByteSmartPtr rootCACertBuffer = Utils::readBufferFromFile(_rootCaCertFilename);
     if (rootCACertBuffer == NULL)
     {
-        printf("verifySigmaMessage #%d failed - Error reading root CA certificate: %s\n",
-               messageType, _rootCaCertFilename);
+        printf("SIGMA: Failed to read root CA certificate: %s\n", _rootCaCertFilename);
         return false;
     }
 
-    // Verify the certificate against the root CA and check expected identity
+    printf("SIGMA: Verifying remote certificate with expected identity: %s\n", _expectedRemoteIdentityString);
     if (!CryptoWrapper::checkCertificate(
             rootCACertBuffer, rootCACertBuffer.size(),
             remoteCertBuffer, remoteCertBuffer.size(),
             _expectedRemoteIdentityString))
     {
-        printf("verifySigmaMessage #%d failed - Certificate verification failed\n", messageType);
+        printf("SIGMA: Certificate verification failed\n");
         return false;
     }
+    printf("SIGMA: Certificate verification successful\n");
 
-    // Extract the public key from the verified certificate
+    // ------ STEP 6: Extract the public key from the verified certificate ------
+    printf("SIGMA: Extracting public key from remote certificate\n");
     KeypairContext* remotePublicKeyContext = NULL;
     if (!CryptoWrapper::getPublicKeyFromCertificate(
             remoteCertBuffer, remoteCertBuffer.size(),
             &remotePublicKeyContext))
     {
-        printf("verifySigmaMessage #%d failed - Error extracting public key from certificate\n", messageType);
+        printf("SIGMA: Failed to extract public key from certificate\n");
         return false;
     }
 
-    // Concatenate the public keys in the correct order for signature verification
-    ByteSmartPtr concatenatedPublicKeysSmartPtr(NULL);
-    // In verifySigmaMessage for message type 2 (client verifying server's message)
+    // ------ STEP 7: Concatenate the DH public keys in the correct order for signature verification ------
+    ByteSmartPtr concatenatedPublicKeysSmartPtr = NULL;
     if (messageType == 2)
     {
         // Verifying server message (client side)
-        // Public keys order should match what was signed: client | server
+        // Public keys order: client | server
+        printf("SIGMA: Concatenating keys in order: client|server for verification\n");
         concatenatedPublicKeysSmartPtr = concat(2,
-                                       _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
-                                       _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES);
+                                              _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+                                              _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES);
     }
     else // messageType == 3
     {
         // Verifying client message (server side)
         // Public keys order: client | server
-        concatenatedPublicKeysSmartPtr = concat(2, _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+        printf("SIGMA: Concatenating keys in order: client|server for verification\n");
+        concatenatedPublicKeysSmartPtr = concat(2,
+                                              _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
                                               _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES);
     }
 
     if (concatenatedPublicKeysSmartPtr == NULL)
     {
-        printf("verifySigmaMessage #%d failed - Error concatenating public keys for verification\n", messageType);
+        printf("SIGMA: Failed to concatenate public keys for verification\n");
         CryptoWrapper::cleanKeyContext(&remotePublicKeyContext);
         return false;
     }
 
-    // Verify the signature over the concatenated public keys
+    // ------ STEP 8: Verify the signature over the concatenated public keys ------
+    printf("SIGMA: Verifying signature over concatenated DH public keys\n");
     bool signatureValid = false;
     if (!CryptoWrapper::verifyMessageRsa3072Pss(
             concatenatedPublicKeysSmartPtr, concatenatedPublicKeysSmartPtr.size(),
             remotePublicKeyContext, parts[2].part, parts[2].partSize,
             &signatureValid))
     {
-        printf("verifySigmaMessage #%d failed - Error during signature verification\n", messageType);
+        printf("SIGMA: Error during signature verification\n");
         CryptoWrapper::cleanKeyContext(&remotePublicKeyContext);
         return false;
     }
 
     if (!signatureValid)
     {
-        printf("verifySigmaMessage #%d failed - Invalid signature\n", messageType);
+        printf("SIGMA: Invalid signature\n");
         CryptoWrapper::cleanKeyContext(&remotePublicKeyContext);
         return false;
     }
+    printf("SIGMA: Signature verification successful\n");
 
     // Clean up the remote public key context
     CryptoWrapper::cleanKeyContext(&remotePublicKeyContext);
 
-    // For message 3 (client), calculate shared secret
-    if (messageType == 3)
+    // ------ STEP 9: Calculate the shared DH secret if needed ------
+    // For message 2 (client verifying server), calculate shared secret if not done already
+    // For message 3 (server verifying client), always calculate the shared secret
+    if (messageType == 2 && _sharedDhSecretBuffer[0] == 0) // Check if shared secret appears uninitialized
     {
+        printf("SIGMA: Client calculating shared DH secret\n");
         // Calculate shared secret
         if (!CryptoWrapper::getDhSharedSecret(_dhContext, _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
                                              _sharedDhSecretBuffer, DH_KEY_SIZE_BYTES))
         {
-            printf("verifySigmaMessage #%d failed - Error calculating shared secret\n", messageType);
+            printf("SIGMA: Failed to calculate shared DH secret\n");
             return false;
         }
+
+        printf("SIGMA: Client shared secret (first 8 bytes): ");
+        for (int i = 0; i < 8 && i < DH_KEY_SIZE_BYTES; i++) {
+            printf("%02x", _sharedDhSecretBuffer[i]);
+        }
+        printf("\n");
+    }
+    else if (messageType == 3)
+    {
+        printf("SIGMA: Server calculating shared DH secret\n");
+        // Calculate shared secret
+        if (!CryptoWrapper::getDhSharedSecret(_dhContext, _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+                                             _sharedDhSecretBuffer, DH_KEY_SIZE_BYTES))
+        {
+            printf("SIGMA: Failed to calculate shared DH secret\n");
+            return false;
+        }
+
+        printf("SIGMA: Server shared secret (first 8 bytes): ");
+        for (int i = 0; i < 8 && i < DH_KEY_SIZE_BYTES; i++) {
+            printf("%02x", _sharedDhSecretBuffer[i]);
+        }
+        printf("\n");
     }
 
-    // Verify the MAC over the remote certificate
+    // ------ STEP 9: Calculate the shared DH secret if needed ------
+    // For message 2 (client verifying server), calculate shared secret if not done already
+    // For message 3 (server verifying client), always calculate the shared secret
+    if (messageType == 2 && _sharedDhSecretBuffer[0] == 0) // Check if shared secret appears uninitialized
+    {
+        printf("SIGMA: Client calculating shared DH secret\n");
+        // Calculate shared secret
+        if (!CryptoWrapper::getDhSharedSecret(_dhContext, _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+                                             _sharedDhSecretBuffer, DH_KEY_SIZE_BYTES))
+        {
+            printf("SIGMA: Failed to calculate shared DH secret\n");
+            return false;
+        }
+
+        printf("SIGMA: Client shared secret (first 8 bytes): ");
+        for (int i = 0; i < 8 && i < DH_KEY_SIZE_BYTES; i++) {
+            printf("%02x", _sharedDhSecretBuffer[i]);
+        }
+        printf("\n");
+    }
+    else if (messageType == 3)
+    {
+        printf("SIGMA: Server calculating shared DH secret\n");
+        // Calculate shared secret
+        if (!CryptoWrapper::getDhSharedSecret(_dhContext, _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+                                             _sharedDhSecretBuffer, DH_KEY_SIZE_BYTES))
+        {
+            printf("SIGMA: Failed to calculate shared DH secret\n");
+            return false;
+        }
+
+        printf("SIGMA: Server shared secret (first 8 bytes): ");
+        for (int i = 0; i < 8 && i < DH_KEY_SIZE_BYTES; i++) {
+            printf("%02x", _sharedDhSecretBuffer[i]);
+        }
+        printf("\n");
+    }
+
+    // if (messageType == 3)
+    // {
+    //     printf("SIGMA: Server calculating shared DH secret\n");
+    //     // Calculate shared secret
+    //     if (!CryptoWrapper::getDhSharedSecret(_dhContext, _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+    //                                          _sharedDhSecretBuffer, DH_KEY_SIZE_BYTES))
+    //     {
+    //         printf("SIGMA: Failed to calculate shared DH secret\n");
+    //         return false;
+    //     }
+    //
+    //     printf("SIGMA: Server shared secret (first 8 bytes): ");
+    //     for (int i = 0; i < 8 && i < DH_KEY_SIZE_BYTES; i++) {
+    //         printf("%02x", _sharedDhSecretBuffer[i]);
+    //     }
+    //     printf("\n");
+    // }
+
+    // ------ STEP 10: Derive the MAC key from the shared secret ------
+    printf("SIGMA: Deriving MAC key from shared secret\n");
     BYTE macKey[HMAC_SIZE_BYTES];
     deriveMacKey(macKey);
 
+    // ------ STEP 11: Calculate the MAC over the remote certificate ------
+    printf("SIGMA: Calculating MAC over certificate for verification\n");
     BYTE calculatedMac[HMAC_SIZE_BYTES];
     if (!CryptoWrapper::hmac_SHA256(macKey, HMAC_SIZE_BYTES,
                                    remoteCertBuffer, remoteCertBuffer.size(),
                                    calculatedMac, HMAC_SIZE_BYTES))
     {
-        printf("verifySigmaMessage #%d failed - Error calculating MAC for verification\n", messageType);
+        printf("SIGMA: Failed to calculate MAC for verification\n");
         Utils::secureCleanMemory(macKey, HMAC_SIZE_BYTES);
         return false;
     }
 
+    // ------ STEP 12: Compare the calculated MAC with the received MAC ------
+    printf("SIGMA: Comparing calculated MAC with received MAC\n");
+
+    printf("SIGMA: Calculated MAC (first 8 bytes): ");
+    for (int i = 0; i < 8 && i < HMAC_SIZE_BYTES; i++) {
+        printf("%02x", calculatedMac[i]);
+    }
+    printf("\n");
+
+    printf("SIGMA: Received MAC (first 8 bytes): ");
+    for (int i = 0; i < 8 && i < HMAC_SIZE_BYTES; i++) {
+        printf("%02x", parts[3].part[i]);
+    }
+    printf("\n");
+
+    bool macValid = (memcmp(calculatedMac, parts[3].part, HMAC_SIZE_BYTES) == 0);
     Utils::secureCleanMemory(macKey, HMAC_SIZE_BYTES);
 
-    // Compare the calculated MAC with the received MAC
-    if (memcmp(calculatedMac, parts[3].part, HMAC_SIZE_BYTES) != 0)
+    if (!macValid)
     {
-        printf("verifySigmaMessage #%d failed - MAC verification failed\n", messageType);
+        printf("SIGMA: MAC verification failed\n");
         return false;
     }
 
+    printf("SIGMA: MAC verification successful\n");
+    printf("SIGMA: Message %d verification complete\n", messageType);
     return true;
 }
+
+// bool Session::verifySigmaMessage(unsigned int messageType, const BYTE* pPayload, size_t payloadSize)
+// {
+//     if (messageType != 2 && messageType != 3)
+//     {
+//         return false;
+//     }
+//
+//     const unsigned int expectedNumberOfParts = 4;
+//
+//     // Unpack the received message parts
+//     std::vector<MessagePart> parts;
+//     if (!unpackMessageParts(pPayload, payloadSize, parts) || parts.size() != expectedNumberOfParts)
+//     {
+//         printf("verifySigmaMessage #%d failed - number of message parts is wrong\n", messageType);
+//         return false;
+//     }
+//
+//     // Extract and validate parts
+//     // 1. Remote DH public key
+//     if (parts[0].partSize != DH_KEY_SIZE_BYTES)
+//     {
+//         printf("verifySigmaMessage #%d failed - DH key size is wrong\n", messageType);
+//         return false;
+//     }
+//
+//     // Store remote DH public key
+//     memcpy(_remoteDhPublicKeyBuffer, parts[0].part, DH_KEY_SIZE_BYTES);
+//
+//     // 2. Remote certificate
+//     ByteSmartPtr remoteCertBuffer((BYTE*)Utils::allocateBuffer(parts[1].partSize), parts[1].partSize);
+//     if (remoteCertBuffer == NULL)
+//     {
+//         printf("verifySigmaMessage #%d failed - Error allocating memory for remote certificate\n", messageType);
+//         return false;
+//     }
+//     memcpy(remoteCertBuffer, parts[1].part, parts[1].partSize);
+//
+//     // 3. Validate signature size
+//     if (parts[2].partSize != SIGNATURE_SIZE_BYTES)
+//     {
+//         printf("verifySigmaMessage #%d failed - Signature size is wrong\n", messageType);
+//         return false;
+//     }
+//
+//     // 4. Validate MAC size
+//     if (parts[3].partSize != HMAC_SIZE_BYTES)
+//     {
+//         printf("verifySigmaMessage #%d failed - MAC size is wrong\n", messageType);
+//         return false;
+//     }
+//
+//     // Read the root CA certificate to verify the remote certificate
+//     ByteSmartPtr rootCACertBuffer = Utils::readBufferFromFile(_rootCaCertFilename);
+//     if (rootCACertBuffer == NULL)
+//     {
+//         printf("verifySigmaMessage #%d failed - Error reading root CA certificate: %s\n",
+//                messageType, _rootCaCertFilename);
+//         return false;
+//     }
+//
+//     // Verify the certificate against the root CA and check expected identity
+//     if (!CryptoWrapper::checkCertificate(
+//             rootCACertBuffer, rootCACertBuffer.size(),
+//             remoteCertBuffer, remoteCertBuffer.size(),
+//             _expectedRemoteIdentityString))
+//     {
+//         printf("verifySigmaMessage #%d failed - Certificate verification failed\n", messageType);
+//         return false;
+//     }
+//
+//     // Extract the public key from the verified certificate
+//     KeypairContext* remotePublicKeyContext = NULL;
+//     if (!CryptoWrapper::getPublicKeyFromCertificate(
+//             remoteCertBuffer, remoteCertBuffer.size(),
+//             &remotePublicKeyContext))
+//     {
+//         printf("verifySigmaMessage #%d failed - Error extracting public key from certificate\n", messageType);
+//         return false;
+//     }
+//
+//     // Concatenate the public keys in the correct order for signature verification
+//     ByteSmartPtr concatenatedPublicKeysSmartPtr(NULL);
+//     // In verifySigmaMessage for message type 2 (client verifying server's message)
+//     if (messageType == 2)
+//     {
+//         // Verifying server message (client side)
+//         // Public keys order should match what was signed: client | server
+//         concatenatedPublicKeysSmartPtr = concat(2,
+//                                        _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+//                                        _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES);
+//     }
+//     else // messageType == 3
+//     {
+//         // Verifying client message (server side)
+//         // Public keys order: client | server
+//         concatenatedPublicKeysSmartPtr = concat(2, _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+//                                               _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES);
+//     }
+//
+//     if (concatenatedPublicKeysSmartPtr == NULL)
+//     {
+//         printf("verifySigmaMessage #%d failed - Error concatenating public keys for verification\n", messageType);
+//         CryptoWrapper::cleanKeyContext(&remotePublicKeyContext);
+//         return false;
+//     }
+//
+//     // Verify the signature over the concatenated public keys
+//     bool signatureValid = false;
+//     if (!CryptoWrapper::verifyMessageRsa3072Pss(
+//             concatenatedPublicKeysSmartPtr, concatenatedPublicKeysSmartPtr.size(),
+//             remotePublicKeyContext, parts[2].part, parts[2].partSize,
+//             &signatureValid))
+//     {
+//         printf("verifySigmaMessage #%d failed - Error during signature verification\n", messageType);
+//         CryptoWrapper::cleanKeyContext(&remotePublicKeyContext);
+//         return false;
+//     }
+//
+//     if (!signatureValid)
+//     {
+//         printf("verifySigmaMessage #%d failed - Invalid signature\n", messageType);
+//         CryptoWrapper::cleanKeyContext(&remotePublicKeyContext);
+//         return false;
+//     }
+//
+//     // Clean up the remote public key context
+//     CryptoWrapper::cleanKeyContext(&remotePublicKeyContext);
+//
+//     // For message 3 (client), calculate shared secret
+//     if (messageType == 3)
+//     {
+//         // Calculate shared secret
+//         if (!CryptoWrapper::getDhSharedSecret(_dhContext, _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+//                                              _sharedDhSecretBuffer, DH_KEY_SIZE_BYTES))
+//         {
+//             printf("verifySigmaMessage #%d failed - Error calculating shared secret\n", messageType);
+//             return false;
+//         }
+//     }
+//
+//     // Verify the MAC over the remote certificate
+//     BYTE macKey[HMAC_SIZE_BYTES];
+//     deriveMacKey(macKey);
+//
+//     BYTE calculatedMac[HMAC_SIZE_BYTES];
+//     if (!CryptoWrapper::hmac_SHA256(macKey, HMAC_SIZE_BYTES,
+//                                    remoteCertBuffer, remoteCertBuffer.size(),
+//                                    calculatedMac, HMAC_SIZE_BYTES))
+//     {
+//         printf("verifySigmaMessage #%d failed - Error calculating MAC for verification\n", messageType);
+//         Utils::secureCleanMemory(macKey, HMAC_SIZE_BYTES);
+//         return false;
+//     }
+//
+//     Utils::secureCleanMemory(macKey, HMAC_SIZE_BYTES);
+//
+//     // Compare the calculated MAC with the received MAC
+//     if (memcmp(calculatedMac, parts[3].part, HMAC_SIZE_BYTES) != 0)
+//     {
+//         printf("verifySigmaMessage #%d failed - MAC verification failed\n", messageType);
+//         return false;
+//     }
+//
+//     return true;
+// }
+
+// //////////////
 // bool Session::verifySigmaMessage(unsigned int messageType, const BYTE* pPayload, size_t payloadSize)
 // {
 //     if (messageType != 2 && messageType != 3)
