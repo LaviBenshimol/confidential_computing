@@ -871,23 +871,6 @@ bool Session::verifySigmaMessage(unsigned int messageType, const BYTE* pPayload,
         printf("\n");
     }
 
-    // if (messageType == 3)
-    // {
-    //     printf("SIGMA: Server calculating shared DH secret\n");
-    //     // Calculate shared secret
-    //     if (!CryptoWrapper::getDhSharedSecret(_dhContext, _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
-    //                                          _sharedDhSecretBuffer, DH_KEY_SIZE_BYTES))
-    //     {
-    //         printf("SIGMA: Failed to calculate shared DH secret\n");
-    //         return false;
-    //     }
-    //
-    //     printf("SIGMA: Server shared secret (first 8 bytes): ");
-    //     for (int i = 0; i < 8 && i < DH_KEY_SIZE_BYTES; i++) {
-    //         printf("%02x", _sharedDhSecretBuffer[i]);
-    //     }
-    //     printf("\n");
-    // }
 
     // ------ STEP 10: Derive the MAC key from the shared secret ------
     printf("SIGMA: Deriving MAC key from shared secret\n");
@@ -1242,8 +1225,7 @@ bool Session::decryptMessage(MessageHeader* header, BYTE* buffer, size_t* pPlain
         aadHeader.sessionId = header->sessionId;
         aadHeader.messageType = header->messageType;
         aadHeader.messageCounter = header->messageCounter;
-        aadHeader.payloadSize = 0;  // Will be filled by decryption
-
+        aadHeader.payloadSize = expectedPlaintextSize;
         size_t actualPlaintextSize = 0;
         bool result = CryptoWrapper::decryptAES_GCM256(
             _sessionKey, SYMMETRIC_KEY_SIZE_BYTES,
