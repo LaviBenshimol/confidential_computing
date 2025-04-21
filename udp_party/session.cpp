@@ -166,6 +166,7 @@ void Session::cleanDhData()
     Utils::secureCleanMemory(_sharedDhSecretBuffer, DH_KEY_SIZE_BYTES);
 }
 
+
 void Session::deriveMacKey(BYTE* macKeyBuffer)
 {
     char keyDerivationContext[MAX_CONTEXT_SIZE];
@@ -174,13 +175,10 @@ void Session::deriveMacKey(BYTE* macKeyBuffer)
         exit(0);
     }
 
-    // Generate random salt for HKDF
+    // Use a fixed salt (or derive it deterministically from shared data)
+    // For example, use the first HMAC_SIZE_BYTES from the shared DH secret
     BYTE salt[HMAC_SIZE_BYTES];
-    if (!Utils::generateRandom(salt, HMAC_SIZE_BYTES))
-    {
-        printf("Error generating random salt for MAC key derivation\n");
-        exit(0);
-    }
+    memcpy(salt, _sharedDhSecretBuffer, HMAC_SIZE_BYTES);
 
     // Derive the MAC key using HKDF with the DH shared secret
     if (!CryptoWrapper::deriveKey_HKDF_SHA256(
@@ -193,8 +191,6 @@ void Session::deriveMacKey(BYTE* macKeyBuffer)
         exit(0);
     }
 }
-
-
 void Session::deriveSessionKey()
 {
     char keyDerivationContext[MAX_CONTEXT_SIZE];
