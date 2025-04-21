@@ -260,7 +260,7 @@ ByteSmartPtr Session::prepareSigmaMessage(unsigned int messageType)
     }
 
     // Concatenate public keys in proper order based on message type
-    ByteSmartPtr concatenatedPublicKeysSmartPtr;
+    ByteSmartPtr concatenatedPublicKeysSmartPtr(NULL);
     if (messageType == 2)
     {
         // Server: order is client DH key | server DH key
@@ -464,13 +464,17 @@ bool Session::verifySigmaMessage(unsigned int messageType, const BYTE* pPayload,
     }
 
     // Concatenate the public keys in the correct order for signature verification
-    ByteSmartPtr concatenatedPublicKeysSmartPtr;
+    ByteSmartPtr concatenatedPublicKeysSmartPtr(NULL);
     if (messageType == 2)
     {
         // Verifying server message (client side)
         // Public keys order: client | server
-        concatenatedPublicKeysSmartPtr = concat(2, _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
-                                              _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES);
+        // concatenatedPublicKeysSmartPtr = concat(2, _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+                                              // _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES);
+        concatenatedPublicKeysSmartPtr = concat(2,
+                                         _remoteDhPublicKeyBuffer, DH_KEY_SIZE_BYTES,
+                                         _localDhPublicKeyBuffer, DH_KEY_SIZE_BYTES);
+
     }
     else // messageType == 3
     {
