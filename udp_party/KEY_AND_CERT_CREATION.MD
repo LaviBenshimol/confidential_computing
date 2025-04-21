@@ -24,27 +24,34 @@ openssl req -x509 -new -sha384 -nodes -key rootCA.key -days 1024 -out rootCA.crt
 
 ## Step 2: Create Alice's Private Key and Certificate Signing Request (CSR)
 
-1. Generate RSA private key for Bob (3072 bits)
+1. Generate RSA private key for Alice (3072 bits)
 ```bash
-openssl genrsa -out alice.key 3072 
+openssl req -new -sha384 -key alice.key -out alice.csr -passin pass:alicekey \
+  -subj "/C=AU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=Alice.com" 
 ```
 
+2. Sign
+
 ```bash
-openssl req -new -key alice.key -out alice.csr -sha384 
+openssl x509 -req -in alice.csr -CA rootCA.crt -CAkey rootCA.key -CAcreateserial \
+  -out alice.crt -days 365 -sha384 -set_serial 02
 ```
 
-3. Remove the unencrypted key
-```bash
-rm bob_unencrypted.key
-```
+## Step 3: Create Bob's Private Key and Certificate Signing Request (CSR)
 
-4. Create Certificate Signing Request (CSR) for Bob
+1. Create Certificate Signing Request (CSR) for Bob
+
 ```bash
 openssl req -new -sha384 -key bob.key -out bob.csr -passin pass:bobkey \
-  -subj "/C=AU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=Bob.com"
+  -subj "/C=AU/ST=Some-State/O=CBG/CN=Boby.com"
 ```
-  
-## Step 3:
+
+2. Sign 
+
+```bash
+openssl x509 -req -in bob.csr -CA rootCA.crt -CAkey rootCA.key -CAcreateserial -out alice.crt -days 365 -sha384 -set_serial 03 
+```
+
 
 
 #####################
